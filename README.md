@@ -38,7 +38,7 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 ### 2. Run the app
 
 ```bash
-git clone <this repository's URL>
+git clone https://github.com/borobaya/google-maps-walk-and-fly.git
 cd google-maps-walk-and-fly
 npm install
 cp .env.example .env.local
