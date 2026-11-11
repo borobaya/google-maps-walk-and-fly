@@ -38,7 +38,7 @@ export class Player {
 	/** Height of the feet (walk) or eyes (fly) above the surface below. */
 	heightAboveGround = 0;
 	speed = 0;
-	/** Distance to the nearest wall around you when flying (capped), used to set how close the camera can draw. */
+	/** Distance to the nearest wall around you (capped), used to set how close the camera can draw. */
 	clearance = 60;
 	/** Frames in flight where no ground could be found (tiles still loading); for diagnostics. */
 	groundMisses = 0;
@@ -168,7 +168,7 @@ export class Player {
 		return {
 			z: ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ),
 			x: ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ),
-			y: ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) || k.has( 'ControlLeft' ) ? 1 : 0 ),
+			y: ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ),
 			fast: k.has( 'ShiftLeft' ) || k.has( 'ShiftRight' ),
 		};
 
@@ -195,6 +195,8 @@ export class Player {
 		this.blockWalls( dt );
 		position.x += velocity.x * dt;
 		position.z += velocity.z * dt;
+		// keep the eyes off walls on every side (not just ahead), so the view cannot cut into them
+		this.keepClear( RADIUS );
 
 		// vertical: follow the ground, or fall
 		let feet = position.y - EYE;
@@ -329,7 +331,7 @@ export class Player {
 	 * Feel around in flight: push away from anything closer than BODY (so the view never
 	 * pokes through a wall or a steep hillside) and note the nearest obstacle.
 	 */
-	private keepClear() {
+	private keepClear( body = BODY ) {
 
 		const { world, position } = this;
 		let nearest = FEELER;
@@ -342,12 +344,12 @@ export class Player {
 			const hit = world.cast( position, dir, FEELER );
 			if ( ! hit ) continue;
 
-			if ( hit.distance < BODY ) {
+			if ( hit.distance < body ) {
 
-				position.addScaledVector( dir, hit.distance - BODY );
+				position.addScaledVector( dir, hit.distance - body );
 				const into = this.velocity.dot( dir );
 				if ( into > 0 ) this.velocity.addScaledVector( dir, - into );
-				hit.distance = BODY;
+				hit.distance = body;
 
 			}
 
@@ -562,7 +564,8 @@ export class Player {
 
 		window.addEventListener( 'keydown', e => {
 
-			if ( typing( e ) || e.metaKey ) return;
+			// leave browser and system shortcuts (Ctrl+W, Cmd+R, ...) alone
+			if ( typing( e ) || e.metaKey || e.ctrlKey ) return;
 			if ( e.code === 'KeyF' && ! e.repeat ) this.toggleMode();
 			if ( e.code === 'Space' && ! e.repeat ) {
 
@@ -597,10 +600,14 @@ export class Player {
 			if ( document.activeElement instanceof HTMLElement ) document.activeElement.blur();
 
 		} );
+		// no context menu over the scene: it would swallow the button release and leave the view steering
+		dom.addEventListener( 'contextmenu', e => e.preventDefault() );
 		window.addEventListener( 'mouseup', () => this.dragging = false );
 		window.addEventListener( 'blur', () => this.dragging = false );
 		window.addEventListener( 'mousemove', e => {
 
+			// a release we never heard about (outside the window, behind a menu) still ends the drag
+			if ( e.buttons === 0 ) this.dragging = false;
 			if ( this.dragging ) this.look( e.movementX * LOOK_SENSITIVITY, e.movementY * LOOK_SENSITIVITY );
 
 		} );

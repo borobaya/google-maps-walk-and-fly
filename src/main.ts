@@ -38,13 +38,33 @@ function start( key: string ) {
 
 	const player = new Player( world, camera, canvas );
 	const hud = new Hud( ui, player, world, key );
-	world.onError = message => hud.error( message );
+	world.onError = ( message, fatal ) => hud.error( message, fatal );
 	hud.onGoTo = ( lat, lng ) => player.teleport( lat, lng );
 
 	// start where the URL says (#lat,lng), otherwise the first preset
-	const fromHash = parseLatLng( decodeURIComponent( location.hash.slice( 1 ) ) );
-	const begin = fromHash ?? PLACES[ 0 ];
+	const fromHash = () => {
+
+		try {
+
+			return parseLatLng( decodeURIComponent( location.hash.slice( 1 ) ) );
+
+		} catch {
+
+			return null; // a mangled link is not worth a blank page
+
+		}
+
+	};
+	const begin = fromHash() ?? PLACES[ 0 ];
 	player.teleport( begin.lat, begin.lng );
+	// a link pasted into the address bar while the app is open only changes the hash: follow it
+	// (our own position updates use replaceState, which does not fire this)
+	window.addEventListener( 'hashchange', () => {
+
+		const to = fromHash();
+		if ( to ) player.teleport( to.lat, to.lng );
+
+	} );
 
 	const resize = () => {
 
@@ -81,8 +101,9 @@ function start( key: string ) {
 		// see to the horizon from wherever we are, without wasting depth precision
 		const h = player.settling ? 1500 : Math.max( player.heightAboveGround, 2 );
 		// never let the near plane reach a wall beside you, or you would see through it
-		const room = player.mode === 'fly' && ! player.settling ? Math.min( h, player.clearance * 2 ) : h;
-		camera.near = MathUtils.clamp( room * 0.05, 0.3, 50 );
+		// (at most half the distance to it, which keeps even the corners of the view on your side)
+		const reach = player.settling ? Infinity : player.clearance * 0.5;
+		camera.near = MathUtils.clamp( Math.min( Math.max( h * 0.05, 0.3 ), reach ), 0.1, 50 );
 		camera.far = MathUtils.clamp( Math.sqrt( 2 * EARTH_RADIUS * h ) * 1.5 + 5000, 8000, 1e6 );
 		camera.fov = player.fov;
 		camera.updateProjectionMatrix();

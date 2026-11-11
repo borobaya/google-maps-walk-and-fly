@@ -12,10 +12,15 @@ export const PLACES: Array<{ name: string, lat: number, lng: number }> = [
 	{ name: 'Grand Canyon', lat: 36.0998, lng: - 112.1125 },
 ];
 
-/** Parse "51.5, -0.12" (also accepts a pasted Google Maps URL containing @lat,lng). */
+/**
+ * Parse "51.5, -0.12", or a pasted Google Maps URL containing @lat,lng. Anything else
+ * (such as "10 5th Avenue") is not coordinates and is left for the search by name.
+ */
 export function parseLatLng( text: string ): { lat: number, lng: number } | null {
 
-	const m = text.match( /(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)/ );
+	const number = String.raw`(-?\d+(?:\.\d+)?)`;
+	const m = text.match( new RegExp( String.raw`^\s*${ number }\s*[,\s]\s*${ number }\s*$` ) )
+		?? ( /^\s*(?:https?:\/\/|www\.|maps\.)/i.test( text ) ? text.match( new RegExp( `@${ number },${ number }` ) ) : null );
 	if ( ! m ) return null;
 	const lat = Number( m[ 1 ] ), lng = Number( m[ 2 ] );
 	if ( Math.abs( lat ) > 90 || Math.abs( lng ) > 180 ) return null;
@@ -53,7 +58,14 @@ function loadMaps( key: string ): Promise<any> {
 		};
 		const script = document.createElement( 'script' );
 		script.src = `https://maps.googleapis.com/maps/api/js?key=${ encodeURIComponent( key ) }&loading=async&libraries=geocoding&callback=__mapsReady`;
-		script.onerror = () => reject( new Error( 'Could not reach Google' ) );
+		script.onerror = () => {
+
+			// a network failure is not permanent: forget this attempt so the next search tries again
+			script.remove();
+			mapsLoading = null;
+			reject( new Error( 'Could not reach Google' ) );
+
+		};
 		document.head.append( script );
 
 	} );
@@ -126,6 +138,7 @@ export class Hud {
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
 	private note = el( 'div', 'note' );
 	private nextSlow = 0;
+	private bannerTimer = 0;
 
 	constructor( root: HTMLElement, private player: Player, private world: World, apiKey: string ) {
 
@@ -213,10 +226,15 @@ export class Hud {
 
 	}
 
-	error( message: string ) {
+	/** @param fatal false when the world had loaded and tiles then began to fail (quota, session, network) */
+	error( message: string, fatal = true ) {
 
-		this.banner.textContent = `Could not load Google 3D Tiles: ${ message }. Check the API key and that the Map Tiles API is enabled.`;
+		this.banner.textContent = fatal
+			? `Could not load Google 3D Tiles: ${ message }. Check the API key and that the Map Tiles API is enabled.`
+			: `Google 3D Tiles have stopped loading: ${ message }. Check your connection and the key's quota, then reload.`;
 		this.banner.classList.add( 'show' );
+		clearTimeout( this.bannerTimer );
+		if ( ! fatal ) this.bannerTimer = window.setTimeout( () => this.banner.classList.remove( 'show' ), 15000 );
 
 	}
 

@@ -19,7 +19,7 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 ## What you need
 
-- [Node.js](https://nodejs.org) 20 or newer.
+- [Node.js](https://nodejs.org) 20.19 or newer (or 22.12 or newer).
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
 - A reasonably recent computer. The clouds are demanding; press `K` to turn them off.
 
@@ -108,4 +108,4 @@ Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScr
 
 ## Licence
 
-The code is released under the [MIT licence](LICENSE). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence.
+The code is released under the [MIT licence](LICENSE). Two sets of bundled files keep their own licences: the Draco decoder in `public/draco/` ([Apache 2.0](public/draco/LICENSE), from Google) and the cloud textures in `public/clouds/` ([MIT](public/clouds/LICENSE), from three-geospatial). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence.

@@ -36,7 +36,10 @@ const ENU_TO_SCENE = new Matrix4().set(
 export class World {
 
 	readonly tiles: TilesRenderer;
-	onError: ( ( message: string ) => void ) | null = null;
+	/** `fatal` is false when tiles start failing after the world had loaded. */
+	onError: ( ( message: string, fatal: boolean ) => void ) | null = null;
+	private failures: number[] = [];
+	private lastWarned = - Infinity;
 
 	private raycaster = new Raycaster();
 	private frame = new Matrix4();
@@ -82,8 +85,21 @@ export class World {
 		tiles.setResolutionFromRenderer( camera, renderer );
 		tiles.addEventListener( 'load-error', ( e: any ) => {
 
-			// only the root failing is fatal (bad key, API not enabled, quota)
-			if ( ! tiles.root ) this.onError?.( String( e.error?.message ?? e.error ?? 'Tiles failed to load' ) );
+			const message = String( e.error?.message ?? e.error ?? 'Tiles failed to load' );
+			// the root failing is fatal (bad key, API not enabled, quota)
+			if ( ! tiles.root ) return this.onError?.( message, true );
+
+			// One tile failing is normal. A run of them means the quota ran out, the session
+			// expired or the network dropped: say so, instead of leaving silent holes.
+			const now = performance.now();
+			this.failures = this.failures.filter( t => now - t < 10000 );
+			this.failures.push( now );
+			if ( this.failures.length >= 5 && now - this.lastWarned > 30000 ) {
+
+				this.lastWarned = now;
+				this.onError?.( message, false );
+
+			}
 
 		} );
 
