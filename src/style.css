@@ -1,0 +1,193 @@
+:root {
+	--panel: rgba(16, 20, 26, 0.72);
+	--line: rgba(255, 255, 255, 0.14);
+	--text: #f2f4f7;
+	--muted: #aab3c0;
+	--accent: #7cc4ff;
+	font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+	font-size: 14px;
+	color: var(--text);
+}
+
+html, body {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+	background: #9fc4e8;
+}
+
+#view {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	cursor: grab;
+}
+
+#ui > * { position: fixed; }
+
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 10px 12px;
+	backdrop-filter: blur(8px);
+}
+
+.status { top: 12px; left: 12px; pointer-events: none; }
+.status .mode {
+	display: block;
+	font-weight: 650;
+	font-size: 15px;
+	color: var(--accent);
+}
+.stats {
+	display: grid;
+	gap: 2px;
+	margin-top: 4px;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+	min-width: 170px;
+}
+.stats:empty { display: none; }
+
+.goto { top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 390px; }
+.goto button:disabled { opacity: 0.5; cursor: progress; }
+.note { flex-basis: 100%; color: #ffb4ab; font-size: 12px; line-height: 1.4; }
+.note:empty { display: none; }
+
+.compass {
+	top: 12px;
+	left: 50%;
+	width: 52px;
+	height: 52px;
+	margin-left: -26px;
+	border-radius: 50%;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	backdrop-filter: blur(8px);
+	pointer-events: none;
+}
+/* fixed marker showing which way you face */
+.compass::after {
+	content: '';
+	position: absolute;
+	top: -5px;
+	left: 50%;
+	margin-left: -4px;
+	border: 4px solid transparent;
+	border-top: 6px solid var(--accent);
+}
+.dial { position: absolute; inset: 0; }
+.dial i {
+	position: absolute;
+	inset: 0;
+	font-style: normal;
+	font-size: 11px;
+	font-weight: 600;
+	text-align: center;
+	line-height: 16px;
+	color: var(--muted);
+}
+.dial i:nth-child(1) { color: #ff8a80; }
+.dial i:nth-child(2) { transform: rotate(90deg); }
+.dial i:nth-child(3) { transform: rotate(180deg); }
+.dial i:nth-child(4) { transform: rotate(270deg); }
+.goto input, .goto select, .goto button {
+	font: inherit;
+	color: var(--text);
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 6px 8px;
+}
+.goto input { width: 160px; }
+.goto input.bad { border-color: #ff8a80; }
+.goto button { cursor: pointer; background: rgba(124, 196, 255, 0.22); }
+.goto select { max-width: 110px; }
+.goto option { color: #111; }
+.goto :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.help { left: 12px; bottom: 12px; display: grid; gap: 6px; color: var(--muted); pointer-events: none; }
+.help.hidden { display: none; }
+body[data-mode='walk'] .fly-only,
+body[data-mode='fly'] .walk-only { display: none; }
+kbd {
+	display: inline-block;
+	min-width: 1.2em;
+	text-align: center;
+	font: inherit;
+	font-size: 12px;
+	color: var(--text);
+	background: rgba(255, 255, 255, 0.12);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 1px 5px;
+	margin-right: 2px;
+}
+
+body.looking #view { cursor: grabbing; }
+
+.hint {
+	left: 50%;
+	bottom: 56px;
+	transform: translateX(-50%);
+	background: var(--panel);
+	border-radius: 999px;
+	padding: 8px 16px;
+	opacity: 0;
+	transition: opacity 0.2s;
+	pointer-events: none;
+}
+.hint.show { opacity: 1; }
+
+.credits {
+	right: 8px;
+	bottom: 6px;
+	max-width: 60vw;
+	font-size: 11px;
+	color: #fff;
+	text-shadow: 0 0 3px #000, 0 0 3px #000;
+	text-align: right;
+	pointer-events: none;
+}
+.credits b { font-size: 15px; margin-right: 8px; letter-spacing: -0.02em; }
+
+.banner {
+	display: none;
+	top: 70px;
+	left: 50%;
+	transform: translateX(-50%);
+	max-width: min(560px, 90vw);
+	background: #5b1a1a;
+	border: 1px solid #ff8a80;
+	border-radius: 8px;
+	padding: 10px 14px;
+}
+.banner.show { display: block; }
+
+.setup {
+	inset: 0;
+	margin: auto;
+	width: min(520px, calc(100vw - 32px));
+	height: fit-content;
+	background: #10141a;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	padding: 24px 28px;
+	line-height: 1.5;
+}
+.setup h1 { margin: 0 0 8px; font-size: 22px; }
+.setup li { margin: 6px 0; }
+.setup a { color: var(--accent); }
+.setup code { background: rgba(255, 255, 255, 0.1); padding: 1px 5px; border-radius: 4px; }
+.muted { color: var(--muted); }
+
+@media (max-width: 640px) {
+	.goto select { display: none; }
+	.help { display: none; }
+}
+
+/* U key: hide everything except the required attribution */
+body.bare #ui > :not(.credits):not(.banner) { display: none; }
