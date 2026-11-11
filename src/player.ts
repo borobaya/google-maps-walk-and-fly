@@ -18,6 +18,7 @@ const LOOK_SENSITIVITY = 0.004; // radians per pixel dragged
 const KEY_TURN_RATE = 2.0; // rad/s when turning with the arrow keys
 const KEY_PITCH_RATE = 1.2; // rad/s when tilting the view with W / S
 const BASE_FOV = 70;
+const MAX_DROP = 150; // a ground reading this far below the last one is not believed straight away
 const BODY = 1.0; // when flying, stay at least this far from walls on every side
 const FEELER = 60; // how far to look for nearby walls, metres
 const DOUBLE_TAP = 0.3; // seconds between Space presses that toggles flying
@@ -54,10 +55,13 @@ export class Player {
 	private grounded = false;
 	private roll = 0;
 	private yawRate = 0;
+	private yawBefore = Math.PI;
 	private renderY = 1500;
 	private settleTime = 0;
 	private lastSpace = - Infinity;
 	private lastGround = - Infinity;
+	private suspectFrames = 0;
+	private speedHeight = SPAWN_HEIGHT;
 	private fovTarget = BASE_FOV;
 	private bob = 0;
 
@@ -124,7 +128,6 @@ export class Player {
 
 	update( dt: number ) {
 
-		const prevYaw = this.yaw;
 		this.keyLook( dt );
 		this.last.copy( this.position );
 
@@ -134,7 +137,9 @@ export class Player {
 
 		this.speed = this.settling ? 0 : this.position.distanceTo( this.last ) / dt;
 		this.reanchor();
-		this.applyCamera( dt, ( this.yaw - prevYaw ) / dt );
+		// turning measured since the last frame, so steering with the mouse banks too
+		this.applyCamera( dt, ( this.yaw - this.yawBefore ) / dt );
+		this.yawBefore = this.yaw;
 
 	}
 
@@ -150,6 +155,7 @@ export class Player {
 		if ( this.settleTime < 0.8 ) return;
 		this.position.y = top + SPAWN_HEIGHT;
 		this.lastGround = top;
+		this.speedHeight = SPAWN_HEIGHT;
 		this.renderY = this.position.y;
 		this.heightAboveGround = SPAWN_HEIGHT;
 		this.settling = false;
@@ -194,14 +200,15 @@ export class Player {
 		let feet = position.y - EYE;
 		const probe = this.tmp.set( position.x, feet, position.z );
 		// in the air the feet may already be below a surface, so look down from eye level
-		let ground = world.groundBelow( probe, this.grounded ? STEP : EYE );
+		let ground = this.trusted( world.groundBelow( probe, this.grounded ? STEP : EYE ) );
 
 		if ( ground === null ) {
 
 			// nothing below: either we slipped under the mesh or it is not loaded yet
 			const top = world.topSurface( probe );
-			if ( top === null ) {
+			if ( top === null || top < this.lastGround - MAX_DROP ) {
 
+				// no ground we can believe in: stay put until the tiles arrive
 				velocity.y = 0;
 				return;
 
@@ -352,6 +359,20 @@ export class Player {
 
 	}
 
+	/**
+	 * While tiles are being swapped for finer ones there can briefly be a hole under you, and a
+	 * ray through it reports "ground" kilometres down. Ignore a reading that suddenly drops far
+	 * below the last one unless it keeps saying so (a real cliff edge does).
+	 */
+	private trusted( ground: number | null ): number | null {
+
+		if ( ground === null ) return null;
+		if ( ground < this.lastGround - MAX_DROP && ++ this.suspectFrames < 30 ) return null;
+		this.suspectFrames = 0;
+		return ground;
+
+	}
+
 	private fly( dt: number ) {
 
 		const { world, position, velocity } = this;
@@ -363,7 +384,9 @@ export class Player {
 		this.right.set( Math.cos( this.yaw ), 0, - Math.sin( this.yaw ) );
 
 		// faster the higher you are, so streets and whole cities both feel right
-		const base = MathUtils.clamp( this.heightAboveGround * 0.5, 15, 1500 );
+		// (the height is smoothed, so passing over a rooftop or a cliff edge does not jolt your speed)
+		this.speedHeight += ( this.heightAboveGround - this.speedHeight ) * ( 1 - Math.exp( - dt * 1.5 ) );
+		const base = MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
 		const top = base * this.flyScale * ( a.fast ? 3 : 1 );
 
 		// You only move while a key is held: forward or (more slowly) backward along the view,
@@ -398,7 +421,7 @@ export class Player {
 		this.keepClear();
 
 		// keep above the surface
-		const ground = world.groundBelow( position );
+		const ground = this.trusted( world.groundBelow( position ) );
 		if ( ground !== null ) {
 
 			if ( position.y < ground + FLY_CLEARANCE ) {
@@ -432,10 +455,10 @@ export class Player {
 				this.heightAboveGround = FLY_CLEARANCE;
 				this.lastGround = topSurface;
 
-			} else if ( topSurface === null ) {
+			} else {
 
-				// Nothing to measure against: the tiles here are still loading. Hold the last
-				// known ground level so you cannot sink through the world in the meantime.
+				// Nothing reliable to measure against: the tiles here are still loading. Hold the
+				// last known ground level so you cannot sink through the world in the meantime.
 				this.groundMisses ++;
 				if ( position.y < this.lastGround + FLY_CLEARANCE ) {
 
@@ -466,7 +489,9 @@ export class Player {
 		const dGround = this.lastGround - p.y;
 		this.world.reanchorOn( p, dir );
 		this.lastGround = p.y + dGround;
+		const before = this.yaw;
 		this.yaw = Math.atan2( - dir.x, - dir.z );
+		this.yawBefore += this.yaw - before;
 		this.renderY = p.y + dy;
 
 	}

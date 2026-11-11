@@ -74,11 +74,7 @@ function start( key: string ) {
 	} );
 
 	const timer = new Timer();
-	renderer.setAnimationLoop( time => {
-
-		timer.update( time );
-		const dt = Math.min( timer.getDelta(), 0.05 );
-		if ( dt <= 0 ) return;
+	const frame = ( dt: number, time: number ) => {
 
 		player.update( dt );
 
@@ -100,9 +96,19 @@ function start( key: string ) {
 		atmosphere.render( dt );
 		hud.update( time );
 
+	};
+
+	// `capture` lets a script pause the live loop and advance frame by frame (used to record the README video)
+	const capture = { paused: false, step: frame };
+	renderer.setAnimationLoop( time => {
+
+		timer.update( time );
+		const dt = Math.min( timer.getDelta(), 0.05 );
+		if ( dt > 0 && ! capture.paused ) frame( dt, time );
+
 	} );
 
 	// handy when debugging from the console
-	Object.assign( window, { player, world, atmosphere } );
+	Object.assign( window, { player, world, atmosphere, capture } );
 
 }

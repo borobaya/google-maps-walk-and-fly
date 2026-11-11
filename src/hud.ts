@@ -226,6 +226,7 @@ export class Hud {
 		document.body.dataset.mode = p.mode;
 		document.body.classList.toggle( 'looking', p.dragging );
 		this.dial.style.transform = `rotate(${ - p.heading }deg)`;
+		this.dial.style.setProperty( '--h', `${ p.heading }deg` );
 		this.mode.textContent = p.settling ? 'Loading' : p.mode === 'walk' ? 'Walking' : 'Flying';
 
 		this.hint.textContent = p.settling ? 'Loading terrain…' : p.hasLooked ? '' : 'Hold the mouse button and drag to look around';

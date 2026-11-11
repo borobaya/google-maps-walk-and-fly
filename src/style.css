@@ -82,18 +82,24 @@ html, body {
 .dial { position: absolute; inset: 0; }
 .dial i {
 	position: absolute;
-	inset: 0;
+	top: 50%;
+	left: 50%;
+	width: 16px;
+	height: 16px;
+	margin: -8px;
 	font-style: normal;
 	font-size: 11px;
 	font-weight: 600;
 	text-align: center;
 	line-height: 16px;
 	color: var(--muted);
+	/* sit on the rim at angle --a, but stay upright whichever way the dial is turned (--h) */
+	transform: rotate(var(--a)) translateY(-17px) rotate(calc(var(--h, 0deg) - var(--a)));
 }
-.dial i:nth-child(1) { color: #ff8a80; }
-.dial i:nth-child(2) { transform: rotate(90deg); }
-.dial i:nth-child(3) { transform: rotate(180deg); }
-.dial i:nth-child(4) { transform: rotate(270deg); }
+.dial i:nth-child(1) { --a: 0deg; color: #ff8a80; }
+.dial i:nth-child(2) { --a: 90deg; }
+.dial i:nth-child(3) { --a: 180deg; }
+.dial i:nth-child(4) { --a: 270deg; }
 .goto input, .goto select, .goto button {
 	font: inherit;
 	color: var(--text);

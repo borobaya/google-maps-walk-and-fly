@@ -4,6 +4,10 @@ Walk the streets or fly like a bird through Google's photorealistic 3D world, in
 
 Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the same 3D buildings, trees and terrain and lets you go anywhere: stand in Trafalgar Square, skim the Thames, or climb above the clouds over Paris.
 
+![Flying up the Thames, through Tower Bridge and round towards the City of London](docs/flythrough.webp)
+
+<sub>A 15-second flight recorded in the app. [Full-quality video](docs/flythrough.mp4).</sub>
+
 ![The City of London and the Tower of London from the air](docs/london-aerial.jpg)
 
 | | |
@@ -11,7 +15,7 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 | ![The Eiffel Tower from the Champ de Mars](docs/paris-eiffel.jpg) | ![Trafalgar Square at street level](docs/london-street.jpg) |
 | Flying over Paris | On foot in Trafalgar Square |
 
-<sub>Imagery in these screenshots: Google, Airbus and other providers credited in the app.</sub>
+<sub>Imagery: Google, Airbus and the other providers credited in the app.</sub>
 
 ## What you need
 
