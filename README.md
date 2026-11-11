@@ -39,7 +39,7 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 ```bash
 git clone <this repository's URL>
-cd google-maps-3d-first-person
+cd google-maps-walk-and-fly
 npm install
 cp .env.example .env.local
 ```

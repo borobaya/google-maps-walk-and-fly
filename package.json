@@ -1,5 +1,5 @@
 {
-  "name": "google-maps-3d-first-person",
+  "name": "google-maps-walk-and-fly",
   "private": true,
   "version": "0.1.0",
   "description": "Walk and fly through Google's photorealistic 3D world in the browser.",
