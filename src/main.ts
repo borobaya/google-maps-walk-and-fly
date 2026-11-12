@@ -9,21 +9,44 @@ const EARTH_RADIUS = 6371000;
 
 const ui = document.getElementById( 'ui' )!;
 const canvas = document.getElementById( 'view' ) as HTMLCanvasElement;
-const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
-if ( ! apiKey ) {
+// A key is either built in (your own copy, from .env.local) or typed in by the visitor (the public
+// demo). A typed key is kept for this tab only: sessionStorage is dropped when the tab closes.
+const KEY_STORE = 'google-maps-api-key';
+const session = {
+	get: () => { try { return sessionStorage.getItem( KEY_STORE ); } catch { return null; } },
+	set: ( key: string | null ) => {
+
+		try {
+
+			if ( key ) sessionStorage.setItem( KEY_STORE, key );
+			else sessionStorage.removeItem( KEY_STORE );
+
+		} catch { /* storage is blocked: the key simply will not survive a reload */ }
+
+	},
+};
+const builtIn = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+if ( builtIn ) start( builtIn, false );
+else if ( session.get() ) start( session.get()!, true );
+else {
 
 	canvas.style.display = 'none';
 	document.body.style.background = '#0b0e12';
-	showSetup( ui );
+	showSetup( ui, key => {
 
-} else {
+		session.set( key );
+		ui.replaceChildren();
+		canvas.style.display = '';
+		document.body.style.background = '';
+		start( key, true );
 
-	start( apiKey );
+	} );
 
 }
 
-function start( key: string ) {
+function start( key: string, typed: boolean ) {
 
 	const renderer = new WebGLRenderer( { canvas, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' } );
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
@@ -37,7 +60,9 @@ function start( key: string ) {
 	const atmosphere = new Atmosphere( renderer, scene, camera );
 
 	const player = new Player( world, camera, canvas );
-	const hud = new Hud( ui, player, world, key );
+	// forgetting a typed key reloads the page, which lands back on the start screen
+	const changeKey = typed ? () => { session.set( null ); location.reload(); } : null;
+	const hud = new Hud( ui, player, world, key, changeKey );
 	world.onError = ( message, fatal ) => hud.error( message, fatal );
 	hud.onGoTo = ( lat, lng ) => player.teleport( lat, lng );
 

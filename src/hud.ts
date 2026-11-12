@@ -110,18 +110,47 @@ export async function findPlace( query: string, key: string ): Promise<{ lat: nu
 
 }
 
-export function showSetup( root: HTMLElement ) {
+/** The start screen shown when no key is built in: the visitor pastes their own. */
+export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
 
-	root.append( el( 'div', 'setup', `
+	const box = el( 'div', 'setup', `
 		<h1>Walk &amp; Fly</h1>
-		<p>This app needs a Google Maps Platform API key to load the 3D world.</p>
+		<p>Walk the streets or fly like a bird through Google's photorealistic 3D world. To load it, this page needs your own Google Maps Platform API key.</p>
 		<ol>
 			<li>In <a href="https://console.cloud.google.com/google/maps-apis" target="_blank" rel="noreferrer">Google Cloud Console</a>, enable the <b>Map Tiles API</b> and create an API key.</li>
-			<li>Copy <code>.env.example</code> to <code>.env.local</code> in the project folder.</li>
-			<li>Paste the key after <code>VITE_GOOGLE_MAPS_API_KEY=</code> and restart the dev server.</li>
+			<li>Restrict the key to the <b>Map Tiles API</b> and to this website: <code class="origin"></code></li>
+			<li>Paste the key here.</li>
 		</ol>
-		<p class="muted">The key stays on your machine. Google bills tile usage beyond its free monthly allowance.</p>
-	` ) );
+		<form>
+			<input aria-label="Google Maps Platform API key" placeholder="Your API key" autocomplete="off" autocapitalize="off" spellcheck="false">
+			<button>Start</button>
+		</form>
+		<p class="problem" role="alert"></p>
+		<p class="muted">Your key stays in this browser tab. It is sent only to Google and is forgotten when you close the tab. Google bills usage beyond its free monthly allowance to the key's owner, so consider setting a quota on it.</p>
+		<p class="muted">Running your own copy? You can put the key in <code>.env.local</code> instead; see the <a href="https://github.com/borobaya/google-maps-walk-and-fly#readme" target="_blank" rel="noreferrer">README</a>.</p>
+	` );
+	box.querySelector( '.origin' )!.textContent = `${ location.origin }/*`;
+
+	const input = box.querySelector( 'input' )!;
+	const problem = box.querySelector( '.problem' )!;
+	box.querySelector( 'form' )!.addEventListener( 'submit', e => {
+
+		e.preventDefault();
+		const key = input.value.trim();
+		// Google's keys are one unbroken run of letters, digits, dashes and underscores
+		if ( ! /^[\w-]{20,}$/.test( key ) ) {
+
+			problem.textContent = key ? 'That does not look like an API key. Copy the whole key, with nothing else.' : 'Paste your API key first.';
+			input.classList.add( 'bad' );
+			return;
+
+		}
+
+		onKey( key );
+
+	} );
+	root.append( box );
+	input.focus();
 
 }
 
@@ -140,7 +169,8 @@ export class Hud {
 	private nextSlow = 0;
 	private bannerTimer = 0;
 
-	constructor( root: HTMLElement, private player: Player, private world: World, apiKey: string ) {
+	/** @param changeKey forgets a key the visitor typed in and returns to the start screen; null when the key is built in */
+	constructor( root: HTMLElement, private player: Player, private world: World, apiKey: string, private changeKey: ( () => void ) | null ) {
 
 		// status
 		const status = el( 'div', 'panel status' );
@@ -156,6 +186,15 @@ export class Hud {
 		select.append( new Option( 'Places…', '' ), ...PLACES.map( ( p, i ) => new Option( p.name, String( i ) ) ) );
 		const button = el( 'button', '', 'Go' );
 		go.append( input, button, select, this.note );
+		if ( changeKey ) {
+
+			const forget = el( 'button', 'forget', 'Change API key' );
+			forget.type = 'button';
+			forget.addEventListener( 'click', changeKey );
+			go.append( forget );
+
+		}
+
 		go.addEventListener( 'submit', async e => {
 
 			e.preventDefault();
@@ -218,7 +257,11 @@ export class Hud {
 		} );
 
 		const credits = el( 'div', 'credits' );
-		credits.append( el( 'b', '', 'Google Maps' ), this.credit );
+		// Google's own logo, as its attribution rules require; the data providers follow it
+		const logo = el( 'img' );
+		logo.src = `${ import.meta.env.BASE_URL }google-maps-logo.svg`;
+		logo.alt = 'Google Maps';
+		credits.append( this.credit, logo );
 
 		const compass = el( 'div', 'compass' );
 		compass.append( this.dial );
@@ -232,6 +275,15 @@ export class Hud {
 		this.banner.textContent = fatal
 			? `Could not load Google 3D Tiles: ${ message }. Check the API key and that the Map Tiles API is enabled.`
 			: `Google 3D Tiles have stopped loading: ${ message }. Check your connection and the key's quota, then reload.`;
+		// a key typed in by the visitor can be replaced on the spot
+		if ( fatal && this.changeKey ) {
+
+			const retry = el( 'button', '', 'Enter a different key' );
+			retry.addEventListener( 'click', this.changeKey );
+			this.banner.append( retry );
+
+		}
+
 		this.banner.classList.add( 'show' );
 		clearTimeout( this.bannerTimer );
 		if ( ! fatal ) this.bannerTimer = window.setTimeout( () => this.banner.classList.remove( 'show' ), 15000 );

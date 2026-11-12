@@ -2,6 +2,8 @@
 
 Walk the streets or fly like a bird through Google's photorealistic 3D world, in your browser.
 
+**[Try the demo](https://borobaya.github.io/google-maps-walk-and-fly/)** with your own Google API key; there is nothing to install.
+
 Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the same 3D buildings, trees and terrain and lets you go anywhere: stand in Trafalgar Square, skim the Thames, or climb above the clouds over Paris.
 
 ![Flying up the Thames, through Tower Bridge and round towards the City of London](docs/flythrough.webp)
@@ -17,13 +19,19 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 <sub>Imagery: Google, Airbus and the other providers credited in the app.</sub>
 
-## What you need
+## Try the demo
+
+Open <https://borobaya.github.io/google-maps-walk-and-fly/> and paste a Google Maps Platform API key ([how to get one](#1-get-a-google-api-key)). If you restrict the key to websites, add `https://borobaya.github.io/*`.
+
+The key is kept in that browser tab only. It is sent to Google and nowhere else, and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
+
+## Run it yourself
+
+### What you need
 
 - [Node.js](https://nodejs.org) 20.19 or newer (or 22.12 or newer).
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
 - A reasonably recent computer. The clouds are demanding; press `K` to turn them off.
-
-## Get it running
 
 ### 1. Get a Google API key
 
@@ -95,7 +103,9 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 
 ## Putting it online
 
-If you host this, your key ships inside the page and every visitor's usage is billed to you. Restrict the key to your domain, set a quota, and replace the "Google Maps" text attribution with Google's official logo from the [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies), which also set out the attribution rules you must follow.
+`npm run build` produces a static site that works at any address. This repository publishes it to GitHub Pages with [a workflow](.github/workflows/pages.yml) on every push to `main`; in a fork, turn it on under **Settings → Pages → Source: GitHub Actions**.
+
+Built without a key (as the workflow does), the site asks each visitor for their own. If you build with your key in `.env.local`, it ships inside the page and every visitor's usage is billed to you: restrict the key to your domain and set a quota. Either way, follow the attribution rules in Google's [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies).
 
 ## How it works
 
@@ -108,4 +118,4 @@ Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScr
 
 ## Licence
 
-The code is released under the [MIT licence](LICENSE). Two sets of bundled files keep their own licences: the Draco decoder in `public/draco/` ([Apache 2.0](public/draco/LICENSE), from Google) and the cloud textures in `public/clouds/` ([MIT](public/clouds/LICENSE), from three-geospatial). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence.
+The code is released under the [MIT licence](LICENSE). Two sets of bundled files keep their own licences: the Draco decoder in `public/draco/` ([Apache 2.0](public/draco/LICENSE), from Google) and the cloud textures in `public/clouds/` ([MIT](public/clouds/LICENSE), from three-geospatial). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence. Nor is the Google Maps logo (`public/google-maps-logo.svg`), which is Google's trademark and is shown unmodified as its attribution rules require.
