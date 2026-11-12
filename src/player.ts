@@ -3,6 +3,16 @@ import type { World } from './world';
 
 export type Mode = 'walk' | 'fly';
 
+/** How you were when you left a place, so you can be put back the same way. */
+export interface Resume {
+	mode: Mode;
+	/** compass bearing, degrees */
+	heading: number;
+	pitch: number;
+	/** eye height above the ellipsoid, metres (what `World.toLatLng` reports) */
+	height: number;
+}
+
 const EYE = 1.7; // eye height above the feet, metres
 const RADIUS = 0.4; // body radius for wall checks
 const STEP = 0.6; // tallest ledge you can step onto
@@ -64,6 +74,7 @@ export class Player {
 	private speedHeight = SPAWN_HEIGHT;
 	private fovTarget = BASE_FOV;
 	private bob = 0;
+	private resume: Resume | null = null;
 
 	private forward = new Vector3();
 	private right = new Vector3();
@@ -92,8 +103,11 @@ export class Player {
 
 	}
 
-	/** Jump to a place on Earth; you arrive in the air above it. */
-	teleport( lat: number, lng: number ) {
+	/**
+	 * Jump to a place on Earth. You arrive in the air above it, or, given `resume`,
+	 * at the same height, facing the same way and in the same mode as when you left.
+	 */
+	teleport( lat: number, lng: number, resume: Resume | null = null ) {
 
 		this.world.anchor( lat, lng );
 		this.position.set( 0, 1500, 0 );
@@ -105,6 +119,15 @@ export class Player {
 		this.settling = true;
 		this.settleTime = 0;
 		this.lastGround = - Infinity;
+		this.resume = resume;
+		if ( resume ) {
+
+			this.yaw = ( 180 - resume.heading ) * MathUtils.DEG2RAD;
+			this.pitch = MathUtils.clamp( resume.pitch, - 1.55, 1.55 );
+
+		}
+
+		this.yawBefore = this.yaw; // no banking from the jump itself
 
 	}
 
@@ -153,11 +176,28 @@ export class Player {
 		// give the coarse terrain a moment to refine before trusting its height
 		this.settleTime += dt;
 		if ( this.settleTime < 0.8 ) return;
-		this.position.y = top + SPAWN_HEIGHT;
-		this.lastGround = top;
-		this.speedHeight = SPAWN_HEIGHT;
+		const resume = this.resume;
+		this.resume = null;
+		// The world is anchored at ellipsoid height 0 here, so scene Y is height above the ellipsoid.
+		// Only go back to a remembered height that still makes sense against the terrain now loaded.
+		if ( resume && resume.height > top - 50 && resume.height < top + 20000 ) {
+
+			this.position.y = resume.height;
+			this.mode = resume.mode;
+			// on foot you are set down at eye height and the walk code finds the ground under you
+			this.lastGround = resume.mode === 'walk' ? resume.height - EYE : top;
+			this.heightAboveGround = Math.max( 0, this.position.y - this.lastGround );
+
+		} else {
+
+			this.position.y = top + SPAWN_HEIGHT;
+			this.lastGround = top;
+			this.heightAboveGround = SPAWN_HEIGHT;
+
+		}
+
+		this.speedHeight = this.heightAboveGround;
 		this.renderY = this.position.y;
-		this.heightAboveGround = SPAWN_HEIGHT;
 		this.settling = false;
 
 	}

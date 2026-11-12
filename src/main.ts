@@ -1,7 +1,7 @@
 import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three';
 import { Atmosphere } from './atmosphere';
 import { Hud, PLACES, parseLatLng, showSetup } from './hud';
-import { Player } from './player';
+import { Player, type Resume } from './player';
 import { World } from './world';
 import './style.css';
 
@@ -26,6 +26,9 @@ const session = {
 
 	},
 };
+// where you were last time, kept in this browser for a week
+const LAST_STORE = 'walk-and-fly-last';
+const LAST_EXPIRY = 7 * 24 * 60 * 60 * 1000;
 const builtIn = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
 if ( builtIn ) start( builtIn, false );
@@ -64,9 +67,23 @@ function start( key: string, typed: boolean ) {
 	const changeKey = typed ? () => { session.set( null ); location.reload(); } : null;
 	const hud = new Hud( ui, player, world, key, changeKey );
 	world.onError = ( message, fatal ) => hud.error( message, fatal );
-	hud.onGoTo = ( lat, lng ) => player.teleport( lat, lng );
 
-	// start where the URL says (#lat,lng), otherwise the first preset
+	// --- where to begin -------------------------------------------------
+	// 1. where you left off, if you were here in the last week (same height, heading, walking or flying)
+	// 2. a place given in the link (#lat,lng)
+	// 3. where you are, if the browser is allowed to say
+	// 4. the first preset
+
+	let placed = false; // nothing is loaded or drawn until we know where to begin
+	const place = ( lat: number, lng: number, resume: Resume | null = null ) => {
+
+		placed = true;
+		hud.locating = false;
+		player.teleport( lat, lng, resume );
+
+	};
+	hud.onGoTo = ( lat, lng ) => place( lat, lng );
+
 	const fromHash = () => {
 
 		try {
@@ -80,14 +97,57 @@ function start( key: string, typed: boolean ) {
 		}
 
 	};
-	const begin = fromHash() ?? PLACES[ 0 ];
-	player.teleport( begin.lat, begin.lng );
+	const readLast = (): ( Resume & { lat: number, lng: number } ) | null => {
+
+		try {
+
+			const s = JSON.parse( localStorage.getItem( LAST_STORE ) ?? 'null' );
+			const age = Date.now() - s?.t;
+			const sound = s && [ s.lat, s.lng, s.height, s.heading, s.pitch ].every( Number.isFinite )
+				&& ( s.mode === 'walk' || s.mode === 'fly' ) && Math.abs( s.lat ) <= 90 && Math.abs( s.lng ) <= 180;
+			if ( sound && age >= 0 && age < LAST_EXPIRY ) return s;
+			localStorage.removeItem( LAST_STORE ); // expired or damaged
+			return null;
+
+		} catch {
+
+			return null;
+
+		}
+
+	};
+
+	const link = fromHash();
+	const last = readLast();
+	// the address bar always shows where you are, so a link that matches the saved place is just a reload
+	const sameSpot = link && last && Math.abs( link.lat - last.lat ) < 2e-5 && Math.abs( link.lng - last.lng ) < 2e-5;
+	if ( last && ( ! link || sameSpot ) ) place( last.lat, last.lng, last );
+	else if ( link ) place( link.lat, link.lng );
+	else {
+
+		const fallback = () => { if ( ! placed ) place( PLACES[ 0 ].lat, PLACES[ 0 ].lng ); };
+		if ( ! navigator.geolocation ) fallback();
+		else {
+
+			hud.locating = true;
+			navigator.geolocation.getCurrentPosition(
+				at => { if ( ! placed ) place( at.coords.latitude, at.coords.longitude ); },
+				fallback, // refused or unavailable
+				{ maximumAge: 600000, timeout: 10000 },
+			);
+			// a permission prompt left unanswered should not hold things up for ever
+			setTimeout( fallback, 15000 );
+
+		}
+
+	}
+
 	// a link pasted into the address bar while the app is open only changes the hash: follow it
 	// (our own position updates use replaceState, which does not fire this)
 	window.addEventListener( 'hashchange', () => {
 
 		const to = fromHash();
-		if ( to ) player.teleport( to.lat, to.lng );
+		if ( to ) place( to.lat, to.lng );
 
 	} );
 
@@ -103,14 +163,25 @@ function start( key: string, typed: boolean ) {
 	window.addEventListener( 'resize', resize );
 	resize();
 
-	// remember the place in the URL so a reload returns to it
-	setInterval( () => {
+	// Remember the place: in the address bar, so the link can be shared, and in this browser,
+	// so the next visit within a week picks up where this one ended.
+	const remember = () => {
 
-		if ( player.settling ) return;
+		if ( ! placed || player.settling ) return;
 		const ll = world.toLatLng( player.position );
 		history.replaceState( null, '', `#${ ll.lat.toFixed( 5 ) },${ ll.lng.toFixed( 5 ) }` );
+		try {
 
-	}, 2000 );
+			localStorage.setItem( LAST_STORE, JSON.stringify( {
+				lat: ll.lat, lng: ll.lng, height: ll.height,
+				mode: player.mode, heading: player.heading, pitch: player.pitch, t: Date.now(),
+			} ) );
+
+		} catch { /* storage is blocked: only the address bar remembers */ }
+
+	};
+	setInterval( remember, 2000 );
+	window.addEventListener( 'pagehide', remember );
 
 	window.addEventListener( 'keydown', e => {
 
@@ -120,6 +191,8 @@ function start( key: string, typed: boolean ) {
 
 	const timer = new Timer();
 	const frame = ( dt: number, time: number ) => {
+
+		if ( ! placed ) return hud.update( time ); // still finding out where to begin
 
 		player.update( dt );
 

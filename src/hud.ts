@@ -157,6 +157,8 @@ export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
 export class Hud {
 
 	onGoTo: ( ( lat: number, lng: number ) => void ) | null = null;
+	/** True while waiting for the browser to say where the visitor is. */
+	locating = false;
 
 	private mode = el( 'span', 'mode' );
 	private stats = el( 'div', 'stats' );
@@ -299,7 +301,7 @@ export class Hud {
 		this.dial.style.setProperty( '--h', `${ p.heading }deg` );
 		this.mode.textContent = p.settling ? 'Loading' : p.mode === 'walk' ? 'Walking' : 'Flying';
 
-		this.hint.textContent = p.settling ? 'Loading terrain…' : p.hasLooked ? '' : 'Hold the mouse button and drag to look around';
+		this.hint.textContent = this.locating ? 'Finding your location…' : p.settling ? 'Loading terrain…' : p.hasLooked ? '' : 'Hold the mouse button and drag to look around';
 		this.hint.classList.toggle( 'show', this.hint.textContent !== '' );
 
 		// text that does not need to change every frame

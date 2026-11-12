@@ -58,7 +58,7 @@ Open `.env.local`, paste your key after `VITE_GOOGLE_MAPS_API_KEY=`, then:
 npm run dev
 ```
 
-Open <http://localhost:5173>. You start in the air above the Tower of London.
+Open <http://localhost:5173>. Your browser asks whether the app may use your location: allow it to start above where you are, or refuse to start above the Tower of London.
 
 `.env` and `.env.local` are ignored by git, so your key is never committed.
 
@@ -90,7 +90,16 @@ Flying speed grows with height, so you can thread streets down low and cross a c
 
 ### Going places
 
-Use the box at the top right to pick a preset city or type `latitude, longitude` (pasting a Google Maps link also works). The address bar keeps your position, so reloading or sharing the link returns to the same spot.
+Use the box at the top right to pick a preset city or type `latitude, longitude` (pasting a Google Maps link also works). The address bar keeps your position, so sharing the link takes someone to the same spot.
+
+Where you begin, in order:
+
+1. Where you left off, if you used the app in this browser in the last week. You come back at the same height, facing the same way, and still walking or flying.
+2. The place in the link, if you opened one.
+3. Your own location, if you let the browser share it.
+4. The Tower of London.
+
+Your location and your last position stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
 
 To search by place name as well, also enable the **Maps JavaScript API** and **Geocoding API** on your key (and add them to its API restrictions). Without them the box still accepts coordinates.
 
