@@ -78,8 +78,8 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 | W S | look up / down | pitch up / down |
 | Mouse, button held | drag to look around | drag to look around |
 | Shift | run | boost |
-| Space | jump | climb |
-| C | – | descend; touching the ground lands you |
+| Space | jump | climb; faster the longer you hold |
+| C | – | descend, faster the longer you hold; touching the ground lands you |
 | Space twice, or F | take off | drop to the ground |
 | Scroll | – | change flying speed |
 | K | clouds on / off | same |
@@ -110,8 +110,8 @@ Either way up, three buttons sit on the right edge:
 
 | Button | Walking | Flying |
 | --- | --- | --- |
-| ▲ | jump | climb |
-| ▼ | – | descend; touching the ground lands you |
+| ▲ | jump | climb; faster the longer you hold |
+| ▼ | – | descend, faster the longer you hold; touching the ground lands you |
 | Fly / Walk | take off | drop to the ground |
 
 Nothing is drawn for the drags: wherever your thumb lands is the centre, and how far you drag from there sets your pace. **Go to…** at the top right opens the place box and the clouds switch.

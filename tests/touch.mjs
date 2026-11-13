@@ -222,10 +222,18 @@ await tap( modeButton.x, modeButton.y );
 await sleep( 600 );
 const y0 = ( await state() ).y;
 await down( 3, upButton.x, upButton.y );
-await sleep( 2000 );
+await sleep( 500 );
+const early = await state(), earlyAt = Date.now();
+await sleep( 1800 );
+const late = await state(), lateAt = Date.now();
+await sleep( 700 );
+const later = await state(), laterAt = Date.now();
 await up( 3 );
 const y1 = ( await state() ).y;
 check( 'Fly takes off and ▲ climbs', y1 - y0 > 3, y1 - y0 );
+// metres per second early in the hold, and once it has been held a while
+const gentle = ( early.y - y0 ) / 0.5, full = ( later.y - late.y ) / ( ( laterAt - lateAt ) / 1000 );
+check( '▲ starts gently and speeds up the longer it is held', gentle < 8 && full > 10, { gentle, full, held: ( lateAt - earlyAt ) / 1000 } );
 const downButton = await centre( '.pad .down' );
 await down( 3, downButton.x, downButton.y );
 await page.waitForFunction( () => player.mode === 'walk', { timeout: 20000 } ).catch( () => {} );
@@ -395,9 +403,12 @@ await up( 1 );
 await cdp.send( 'Emulation.setCPUThrottlingRate', { rate: 1 } );
 const lowered = await width();
 check( 'slow frames while moving lower the resolution', lowered < before, [ before, lowered ] );
-// that step was taken while tiles were loading, so with frames to spare again it is tried back
-for ( let i = 0; i < 120 && await width() === lowered; i ++ ) await sleep( 500 );
-check( 'the resolution comes back once frames are fast and loading is done', await width() > lowered, [ lowered, await width() ] );
+// A step taken while tiles were loading may have been the loading's fault, so with frames to
+// spare again it is tried back. One taken with nothing loading was the chip's own, and stays.
+const owed = await page.evaluate( () => resolution.owed );
+for ( let i = 0; i < ( owed ? 120 : 50 ) && await width() === lowered; i ++ ) await sleep( 500 );
+check( owed ? 'a step taken while loading comes back once frames are fast' : 'a step taken with nothing loading stays',
+	owed ? await width() > lowered : await width() === lowered, [ lowered, await width() ] );
 
 // --- the device takes the graphics away ----------------------------------------
 await page.evaluate( () => document.getElementById( 'view' ).getContext( 'webgl2' ).getExtension( 'WEBGL_lose_context' ).loseContext() );

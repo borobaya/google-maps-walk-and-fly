@@ -301,6 +301,7 @@ function start( key: string, typed: boolean ) {
 	} );
 
 	// handy when debugging from the console
-	Object.assign( window, { player, world, atmosphere, capture } );
+	const resolution = { get pixelRatio() { return pixelRatio; }, get owed() { return owed; } };
+	Object.assign( window, { player, world, atmosphere, capture, resolution } );
 
 }

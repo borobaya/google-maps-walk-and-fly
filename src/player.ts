@@ -38,6 +38,8 @@ const BASE_FOV = 70;
 const MAX_DROP = 150; // a ground reading this far below the last one is not believed straight away
 const BODY = 1.0; // when flying, stay at least this far from walls on every side
 const FEELER = 60; // how far to look for nearby walls, metres
+const LIFT_START = 0.25; // going straight up or down begins at this share of flying speed...
+const LIFT_RAMP = 1.5; // ...and reaches all of it after being held this long, seconds
 const DOUBLE_TAP = 0.3; // seconds between Space presses that toggles flying
 
 const UP = new Vector3( 0, 1, 0 );
@@ -89,6 +91,8 @@ export class Player {
 	private speedHeight = SPAWN_HEIGHT;
 	private fovTarget = BASE_FOV;
 	private bob = 0;
+	private liftTime = 0;
+	private liftSign = 0;
 	private resume: Resume | null = null;
 	private lookPointer: number | null = null;
 	private movePointer: number | null = null;
@@ -467,12 +471,19 @@ export class Player {
 		const base = MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
 		const top = base * this.flyScale * ( a.fast ? 3 : 1 );
 
+		// Straight up or down starts gently, for small adjustments, and builds to full flying
+		// speed the longer it is held, so a long climb or descent does not crawl.
+		const sign = Math.sign( a.y );
+		this.liftTime = sign !== 0 && sign === this.liftSign ? this.liftTime + dt : 0;
+		this.liftSign = sign;
+		const lift = LIFT_START + ( 1 - LIFT_START ) * Math.min( 1, this.liftTime / LIFT_RAMP );
+
 		// You only move while a key is held: forward or (more slowly) backward along the view,
-		// sideways, and gently straight up or down. Let go and you come to a stop.
+		// sideways, and straight up or down. Let go and you come to a stop.
 		const target = this.move.set( 0, 0, 0 )
 			.addScaledVector( this.forward, a.z > 0 ? a.z * top : a.z * top * 0.5 )
 			.addScaledVector( this.right, a.x * top * 0.5 )
-			.addScaledVector( UP, a.y * top * 0.25 );
+			.addScaledVector( UP, a.y * top * lift );
 
 		// ease in and out quickly, so starts and stops are smooth but there is no gliding on
 		velocity.addScaledVector( target.sub( velocity ), 1 - Math.exp( - dt * 4 ) );
