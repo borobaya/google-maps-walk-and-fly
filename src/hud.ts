@@ -158,10 +158,26 @@ export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
 /** Shown instead of the app when the browser cannot draw it at all. */
 export function showUnsupported( root: HTMLElement ) {
 
+	// Apple's Lockdown Mode switches WebGL off: in Safari on a Mac, and in every browser on an
+	// iPhone or iPad (they all use Safari's engine there). A page cannot ask whether it is on,
+	// so on those browsers it is named as the likely cause.
+	const ua = navigator.userAgent;
+	const apple = /AppleWebKit/.test( ua ) && ! /Chrome\/|Chromium|Edg\//.test( ua );
 	root.append( el( 'div', 'setup', `
 		<h1>Walk &amp; Fly</h1>
-		<p>This browser or device cannot draw the 3D world: it needs WebGL 2 with floating-point rendering.</p>
-		<p class="muted">Updating the browser, or trying a newer phone or computer, usually fixes this.</p>
+		<p>This browser cannot draw the 3D world: 3D graphics (WebGL 2 with floating-point rendering) are switched off or not supported.</p>
+		${ apple ? `
+			<p><b>Using Lockdown Mode?</b> It switches 3D graphics off. To use this page you can leave Lockdown Mode on and exclude just this website:</p>
+			<ul>
+				<li><b>Safari on iPhone or iPad:</b> open the page menu in the address bar, choose <b>Website Settings</b> and turn off <b>Lockdown Mode</b>.</li>
+				<li><b>Safari on a Mac:</b> <b>Safari</b> menu → <b>Settings for ${ location.hostname }</b> → untick <b>Enable Lockdown Mode</b>.</li>
+				<li><b>Another browser on iPhone or iPad:</b> <b>Settings</b> → <b>Privacy &amp; Security</b> → <b>Lockdown Mode</b> → <b>Configure Web Browsing</b>, and turn that browser off in the list.</li>
+			</ul>
+			<p class="muted">Then reload. Excluding a website or app lowers Lockdown Mode's protection for it, so only do this if you trust this page.</p>
+			<p class="muted">Not using Lockdown Mode? Then updating the browser, or trying a newer device, usually fixes this.</p>
+		` : `
+			<p class="muted">Updating the browser, or trying a newer phone or computer, usually fixes this.</p>
+		` }
 	` ) );
 
 }

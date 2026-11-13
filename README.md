@@ -137,6 +137,7 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 - **Coverage is Google's.** Most large cities are in 3D. Elsewhere you get flat satellite-textured terrain, and a few sensitive sites are deliberately flattened.
 - **Phones run a lighter version.** Clouds start switched off, the picture is drawn at a lower resolution (and lowered further if frames stay slow), and less of the world is kept in memory. How smooth it is depends on the phone.
 - **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
+- **Apple's Lockdown Mode blocks it.** Lockdown Mode switches off 3D graphics in Safari on a Mac and in every browser on iPhone and iPad. The page says so and explains how to exclude just this website.
 - **Lighting is fixed.** One mid-afternoon sun everywhere; there is no night.
 - **One texture is fetched from GitHub.** The cloud renderer's noise texture loads from the three-geospatial project's host; everything else is served locally or by Google.
 

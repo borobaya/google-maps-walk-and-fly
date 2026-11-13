@@ -442,8 +442,23 @@ check( 'no errors on the page', errors.length === 0, errors );
 	await old.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
 	await old.goto( URL, { waitUntil: 'domcontentloaded' } );
 	const said = await old.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => e.textContent ) ).catch( () => '' );
-	check( 'a browser without WebGL gets an explanation, not a blank page', said.includes( 'cannot draw the 3D world' ), said.trim().slice( 0, 80 ) );
+	check( 'a browser without WebGL gets an explanation, not a blank page', said.includes( 'cannot draw the 3D world' ) && ! said.includes( 'Lockdown' ), said.trim().slice( 0, 80 ) );
 	await old.close();
+
+	// Safari's engine with WebGL off is most often Apple's Lockdown Mode: say how to exclude the site
+	const locked = await browser.newPage();
+	await locked.setUserAgent( 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1' );
+	await locked.setViewport( { width: 320, height: 568, isMobile: true, hasTouch: true } );
+	await locked.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
+	await locked.goto( URL, { waitUntil: 'domcontentloaded' } );
+	const advice = await locked.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => {
+
+		const r = e.getBoundingClientRect();
+		return { text: e.textContent, fits: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+
+	} ) ).catch( () => ( { text: '', fits: false } ) );
+	check( 'on an iPhone it names Lockdown Mode and how to exclude the site', advice.text.includes( 'Lockdown Mode' ) && advice.text.includes( 'Configure Web Browsing' ) && advice.fits, advice.fits );
+	await locked.close();
 
 }
 

@@ -212,6 +212,9 @@ body.looking #view { cursor: grabbing; }
 	box-sizing: border-box;
 	width: min(520px, calc(100vw - 32px));
 	height: fit-content;
+	/* a long message on a short screen scrolls inside the box */
+	max-height: calc(100dvh - 24px);
+	overflow: auto;
 	background: #10141a;
 	border: 1px solid var(--line);
 	border-radius: 14px;
@@ -301,7 +304,7 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 	.stats span:nth-child(n+3) { display: none; }
 	.credits { max-width: 70vw; font-size: 10px; }
 	.banner { top: calc(110px + var(--st)); }
-	.setup { padding: 18px 18px; max-height: calc(100dvh - 24px); overflow: auto; }
+	.setup { padding: 18px 18px; }
 }
 
 /* a narrow phone: the status panel must stop short of the compass in the middle */
