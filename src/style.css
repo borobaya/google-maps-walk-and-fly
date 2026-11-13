@@ -7,6 +7,11 @@
 	font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 	font-size: 14px;
 	color: var(--text);
+	/* keep clear of a phone's notch, rounded corners and home bar */
+	--st: env(safe-area-inset-top, 0px);
+	--sr: env(safe-area-inset-right, 0px);
+	--sb: env(safe-area-inset-bottom, 0px);
+	--sl: env(safe-area-inset-left, 0px);
 }
 
 html, body {
@@ -14,6 +19,9 @@ html, body {
 	height: 100%;
 	overflow: hidden;
 	background: #9fc4e8;
+	/* no page scrolling, bouncing or pull-to-refresh while steering */
+	overscroll-behavior: none;
+	-webkit-text-size-adjust: 100%;
 }
 
 #view {
@@ -23,9 +31,14 @@ html, body {
 	height: 100%;
 	display: block;
 	cursor: grab;
+	/* every touch on the scene is ours: no scrolling, pinch-zoom or double-tap zoom */
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
 }
 
-#ui > * { position: fixed; }
+#ui > * { position: fixed; touch-action: manipulation; }
 
 .panel {
 	background: var(--panel);
@@ -35,7 +48,7 @@ html, body {
 	backdrop-filter: blur(8px);
 }
 
-.status { top: 12px; left: 12px; pointer-events: none; }
+.status { top: calc(12px + var(--st)); left: calc(12px + var(--sl)); pointer-events: none; }
 .status .mode {
 	display: block;
 	font-weight: 650;
@@ -51,14 +64,15 @@ html, body {
 	min-width: 170px;
 }
 .stats:empty { display: none; }
+.stats i { font-style: normal; }
 
-.goto { top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 390px; }
+.goto { top: calc(12px + var(--st)); right: calc(12px + var(--sr)); display: flex; flex-wrap: wrap; gap: 6px; max-width: 390px; }
 .goto button:disabled { opacity: 0.5; cursor: progress; }
 .note { flex-basis: 100%; color: #ffb4ab; font-size: 12px; line-height: 1.4; }
 .note:empty { display: none; }
 
 .compass {
-	top: 12px;
+	top: calc(12px + var(--st));
 	left: 50%;
 	width: 52px;
 	height: 52px;
@@ -115,7 +129,7 @@ html, body {
 .goto option { color: #111; }
 .goto :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.help { left: 12px; bottom: 12px; display: grid; gap: 6px; color: var(--muted); pointer-events: none; }
+.help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; gap: 6px; color: var(--muted); pointer-events: none; }
 .help.hidden { display: none; }
 body[data-mode='walk'] .fly-only,
 body[data-mode='fly'] .walk-only { display: none; }
@@ -137,7 +151,7 @@ body.looking #view { cursor: grabbing; }
 
 .hint {
 	left: 50%;
-	bottom: 56px;
+	bottom: calc(56px + var(--sb));
 	transform: translateX(-50%);
 	background: var(--panel);
 	border-radius: 999px;
@@ -147,10 +161,14 @@ body.looking #view { cursor: grabbing; }
 	pointer-events: none;
 }
 .hint.show { opacity: 1; }
+/* in a narrower window the hint would land on the help panel, so it sits above it */
+@media (max-width: 1160px) {
+	.hint { bottom: calc(240px + var(--sb)); }
+}
 
 .credits {
-	right: 8px;
-	bottom: 6px;
+	right: calc(8px + var(--sr));
+	bottom: calc(6px + var(--sb));
 	max-width: 60vw;
 	font-size: 11px;
 	color: #fff;
@@ -172,7 +190,7 @@ body.looking #view { cursor: grabbing; }
 	padding: 10px 14px;
 }
 .banner.show { display: block; }
-.banner button, .setup button, .goto .forget {
+.banner button, .setup button, .goto .forget, .goto .clouds, .goto-open, .pad button {
 	font: inherit;
 	color: var(--text);
 	cursor: pointer;
@@ -182,12 +200,16 @@ body.looking #view { cursor: grabbing; }
 	background: rgba(124, 196, 255, 0.22);
 }
 .banner button { display: block; margin-top: 8px; }
+.goto .clouds { display: none; }
+.goto-open { display: none; top: calc(12px + var(--st)); right: calc(12px + var(--sr)); padding: 8px 12px; }
 .goto .forget { flex-basis: 100%; padding: 2px 0; border: 0; background: none; color: var(--muted); font-size: 12px; text-align: right; }
 .goto .forget:hover { color: var(--text); text-decoration: underline; }
 
 .setup {
 	inset: 0;
 	margin: auto;
+	/* the width and height limits below include the padding, so the box never pokes off a small screen */
+	box-sizing: border-box;
 	width: min(520px, calc(100vw - 32px));
 	height: fit-content;
 	background: #10141a;
@@ -217,9 +239,85 @@ body.looking #view { cursor: grabbing; }
 .setup .problem { color: #ffb4ab; min-height: 1.5em; margin: 0; }
 .muted { color: var(--muted); font-size: 13px; }
 
-@media (max-width: 640px) {
-	.goto select { display: none; }
+/* --- touch devices ------------------------------------------------------ */
+
+/* On-screen buttons, right edge: the right thumb looks, so it is the one free to press them
+   (where mobile games put jump). They sit above the attribution in the corner. */
+.pad {
+	display: none;
+	right: calc(14px + var(--sr));
+	bottom: calc(52px + var(--sb));
+	flex-direction: column;
+	gap: 10px;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+}
+body.touch .pad { display: flex; }
+.pad button {
+	width: 56px;
+	height: 56px;
+	padding: 0;
+	border-radius: 50%;
+	font-size: 18px;
+	background: var(--panel);
+	backdrop-filter: blur(8px);
+	touch-action: none;
+}
+/* on foot there is no ▼, but it keeps its place so the other buttons never move under your thumb */
+body[data-mode='walk'] .pad .down { display: block; visibility: hidden; }
+.pad button.mode { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.pad button.held, .pad button:active { background: rgba(124, 196, 255, 0.45); }
+
+body.touch .help { display: none; }
+body.touch .goto .clouds { display: block; }
+/* iOS zooms the page when a focused input's text is under 16px */
+body.touch .goto input, body.touch .goto select, body.touch .setup input, .setup input { font-size: 16px; }
+/* thumbs cover the bottom of the screen, so the hint goes higher up: below the status panel,
+   compass and go-to box, which reach about 90px down on a narrow screen and 120px on a wide one */
+body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-width: 80vw; text-align: center; border-radius: 14px; }
+
+/* --- small screens (a phone either way up) ------------------------------- */
+/* Below 860px wide the go-to box would reach the compass, so it folds away behind a button.
+   Open, it drops down below the status panel and compass. */
+@media (max-width: 860px), (max-height: 500px) {
+	.goto-open { display: block; }
+	.goto:not(.open) { display: none; }
+	/* a set width, padding included: left to size itself, Safari makes it wider than the screen */
+	.goto { top: calc(100px + var(--st)); box-sizing: border-box; max-width: none; width: min(390px, calc(100vw - 24px - var(--sl) - var(--sr))); }
+	.goto input { flex: 1; width: auto; min-width: 0; }
+	.goto select { max-width: none; flex-basis: 100%; }
+	.goto .clouds { flex: 1; }
+	.goto .forget { flex: 1; flex-basis: auto; }
+	/* the hint would sit on top of the open box */
+	.goto.open ~ .hint { display: none; }
+}
+
+@media (max-width: 640px), (max-height: 500px) {
 	.help { display: none; }
+	/* just mode, height and speed */
+	.status { padding: 8px 10px; }
+	.stats { min-width: 0; }
+	.stats span:nth-child(n+3) { display: none; }
+	.credits { max-width: 70vw; font-size: 10px; }
+	.banner { top: calc(110px + var(--st)); }
+	.setup { padding: 18px 18px; max-height: calc(100dvh - 24px); overflow: auto; }
+}
+
+/* a narrow phone: the status panel must stop short of the compass in the middle */
+@media (max-width: 380px) {
+	.stats i { display: none; }
+}
+
+/* a phone on its side, with the browser's bars showing, is too short for three buttons in a
+   column: ▼ goes beside ▲ so the stack stays clear of the status panel */
+@media (max-height: 500px) {
+	body.touch .pad { display: grid; grid-template-columns: 56px 56px; }
+	.pad button.mode { grid-area: 1 / 2; margin-bottom: 0; }
+	.pad .up { grid-area: 2 / 2; }
+	.pad .down { grid-area: 2 / 1; }
+	/* the open go-to box needs the same corner */
+	.goto.open ~ .pad { display: none; }
 }
 
 /* U key: hide everything except the required attribution */

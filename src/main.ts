@@ -1,7 +1,9 @@
 import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three';
 import { Atmosphere } from './atmosphere';
-import { Hud, PLACES, parseLatLng, showSetup } from './hud';
+import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
+import { quality } from './quality';
+import { addTouchControls } from './touch';
 import { World } from './world';
 import './style.css';
 
@@ -51,8 +53,24 @@ else {
 
 function start( key: string, typed: boolean ) {
 
-	const renderer = new WebGLRenderer( { canvas, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' } );
-	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
+	// the sky is computed in floating point; without that there is nothing to show
+	let renderer: WebGLRenderer;
+	try {
+
+		renderer = new WebGLRenderer( { canvas, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' } );
+		const ext = renderer.extensions;
+		if ( ! ext.has( 'EXT_color_buffer_half_float' ) && ! ext.has( 'EXT_color_buffer_float' ) ) throw new Error( 'no float render targets' );
+
+	} catch {
+
+		canvas.style.display = 'none';
+		document.body.style.background = '#0b0e12';
+		return showUnsupported( ui );
+
+	}
+
+	let pixelRatio = Math.min( window.devicePixelRatio, quality.pixelRatio );
+	renderer.setPixelRatio( pixelRatio );
 
 	const scene = new Scene();
 	const camera = new PerspectiveCamera( 70, 1, 0.3, 20000 );
@@ -60,13 +78,23 @@ function start( key: string, typed: boolean ) {
 
 	const world = new World( key, camera, renderer );
 	scene.add( world.tiles.group );
-	const atmosphere = new Atmosphere( renderer, scene, camera );
+	const atmosphere = new Atmosphere( renderer, scene, camera, quality.clouds );
 
 	const player = new Player( world, camera, canvas );
 	// forgetting a typed key reloads the page, which lands back on the start screen
 	const changeKey = typed ? () => { session.set( null ); location.reload(); } : null;
 	const hud = new Hud( ui, player, world, key, changeKey );
 	world.onError = ( message, fatal ) => hud.error( message, fatal );
+	hud.onClouds = () => atmosphere.toggleClouds();
+	hud.showClouds( atmosphere.cloudsEnabled );
+	addTouchControls( ui, player );
+	// phones take the graphics away when memory runs low; say so instead of showing a frozen picture
+	canvas.addEventListener( 'webglcontextlost', e => {
+
+		e.preventDefault();
+		hud.lost();
+
+	} );
 
 	// --- where to begin -------------------------------------------------
 	// 1. where you left off, if you were here in the last week (same height, heading, walking or flying)
@@ -185,9 +213,53 @@ function start( key: string, typed: boolean ) {
 
 	window.addEventListener( 'keydown', e => {
 
-		if ( e.code === 'KeyK' && ! e.repeat && ! ( e.target instanceof HTMLInputElement ) ) atmosphere.toggleClouds();
+		if ( e.code === 'KeyK' && ! e.repeat && ! ( e.target instanceof HTMLInputElement ) ) hud.showClouds( atmosphere.toggleClouds() );
 
 	} );
+
+	// If frames stay slow, draw fewer pixels, one step at a time.
+	// Arriving somewhere is not counted: those hitches are not the graphics chip's doing. Tiles
+	// keep loading for as long as you move, so that cannot rule a frame out, but decoding them
+	// causes hitches of its own: while they load it takes twice as long to blame the chip.
+	// A step taken while loading may still have been the loading's fault, so once things are calm
+	// and there are frames to spare it is tried back; twice at most, so the picture cannot see-saw.
+	let slowFor = 0, fastFor = 0, smoothed = 1 / 60, settledAt = Infinity;
+	let owed = 0, retries = 2; // steps taken while tiles were loading, and how many may still be undone
+	const setPixelRatio = ( to: number ) => {
+
+		pixelRatio = to;
+		renderer.setPixelRatio( to );
+		resize();
+
+	};
+	const watchSpeed = ( dt: number, time: number ) => {
+
+		if ( player.settling ) return void ( settledAt = Infinity );
+		if ( settledAt === Infinity ) settledAt = time;
+		if ( time - settledAt < 8000 ) return void ( slowFor = fastFor = 0, smoothed = 1 / 60 );
+		smoothed += ( dt - smoothed ) * 0.05;
+		const loading = world.tiles.loadProgress < 1;
+
+		slowFor = smoothed > 1 / 30 ? slowFor + dt : 0;
+		if ( slowFor >= ( loading ? 8 : 4 ) && pixelRatio > quality.minPixelRatio ) {
+
+			slowFor = 0;
+			if ( loading ) owed ++;
+			return setPixelRatio( Math.max( quality.minPixelRatio, pixelRatio - 0.25 ) );
+
+		}
+
+		fastFor = owed > 0 && retries > 0 && ! loading && smoothed < 1 / 50 ? fastFor + dt : 0;
+		if ( fastFor >= 15 ) {
+
+			fastFor = 0;
+			owed --;
+			retries --;
+			setPixelRatio( pixelRatio + 0.25 );
+
+		}
+
+	};
 
 	const timer = new Timer();
 	const frame = ( dt: number, time: number ) => {
@@ -209,11 +281,12 @@ function start( key: string, typed: boolean ) {
 		atmosphere.update( world.tiles.group.matrixWorldInverse );
 
 		// more detail up close when on foot
-		world.tiles.errorTarget = player.mode === 'walk' ? 6 : 12;
+		world.tiles.errorTarget = player.mode === 'walk' ? quality.walkError : quality.flyError;
 		world.update();
 
 		atmosphere.render( dt );
 		hud.update( time );
+		watchSpeed( dt, time );
 
 	};
 

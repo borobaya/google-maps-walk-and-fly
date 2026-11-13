@@ -1,4 +1,5 @@
 import type { Player } from './player';
+import { upright } from './quality';
 import type { World } from './world';
 
 export const PLACES: Array<{ name: string, lat: number, lng: number }> = [
@@ -154,9 +155,22 @@ export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
 
 }
 
+/** Shown instead of the app when the browser cannot draw it at all. */
+export function showUnsupported( root: HTMLElement ) {
+
+	root.append( el( 'div', 'setup', `
+		<h1>Walk &amp; Fly</h1>
+		<p>This browser or device cannot draw the 3D world: it needs WebGL 2 with floating-point rendering.</p>
+		<p class="muted">Updating the browser, or trying a newer phone or computer, usually fixes this.</p>
+	` ) );
+
+}
+
 export class Hud {
 
 	onGoTo: ( ( lat: number, lng: number ) => void ) | null = null;
+	/** Switches the clouds and reports whether they are now on. */
+	onClouds: ( () => boolean ) | null = null;
 	/** True while waiting for the browser to say where the visitor is. */
 	locating = false;
 
@@ -168,6 +182,7 @@ export class Hud {
 	private help = el( 'div', 'panel help' );
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
 	private note = el( 'div', 'note' );
+	private cloudsButton = el( 'button', 'clouds' );
 	private nextSlow = 0;
 	private bannerTimer = 0;
 
@@ -183,6 +198,9 @@ export class Hud {
 		const input = el( 'input' );
 		input.placeholder = 'Place or lat, lng';
 		input.setAttribute( 'aria-label', 'Place name or latitude, longitude' );
+		// a place, not a form field: no contact suggestions, and the keyboard's return key says "go"
+		input.autocomplete = 'off';
+		input.enterKeyHint = 'go';
 		const select = el( 'select' );
 		select.setAttribute( 'aria-label', 'Places' );
 		select.append( new Option( 'Places…', '' ), ...PLACES.map( ( p, i ) => new Option( p.name, String( i ) ) ) );
@@ -196,6 +214,26 @@ export class Hud {
 			go.append( forget );
 
 		}
+
+		// touch devices have no K key
+		this.cloudsButton.type = 'button';
+		this.cloudsButton.addEventListener( 'click', () => { if ( this.onClouds ) this.showClouds( this.onClouds() ); } );
+		go.append( this.cloudsButton );
+
+		// on a small screen the whole box folds away behind this button
+		const open = el( 'button', 'panel goto-open', 'Go to…' );
+		open.type = 'button';
+		open.setAttribute( 'aria-label', 'Go to a place, and settings' );
+		open.addEventListener( 'click', () => go.classList.toggle( 'open' ) );
+		const close = () => go.classList.remove( 'open' );
+		// touching the scene (or anything else) puts the box away again
+		window.addEventListener( 'pointerdown', e => {
+
+			if ( e.target instanceof Node && ( go.contains( e.target ) || open.contains( e.target ) ) ) return;
+			if ( document.activeElement instanceof HTMLElement && go.contains( document.activeElement ) ) document.activeElement.blur();
+			close();
+
+		} );
 
 		go.addEventListener( 'submit', async e => {
 
@@ -227,6 +265,7 @@ export class Hud {
 
 			if ( ! ll ) return;
 			input.blur();
+			close();
 			this.onGoTo?.( ll.lat, ll.lng );
 
 		} );
@@ -236,6 +275,7 @@ export class Hud {
 			if ( select.value !== '' && p ) this.onGoTo?.( p.lat, p.lng );
 			select.value = '';
 			select.blur();
+			close();
 
 		} );
 
@@ -267,7 +307,25 @@ export class Hud {
 
 		const compass = el( 'div', 'compass' );
 		compass.append( this.dial );
-		root.append( compass, status, go, this.help, this.hint, credits, this.banner );
+		root.append( compass, status, open, go, this.help, this.hint, credits, this.banner );
+
+	}
+
+	showClouds( on: boolean ) {
+
+		this.cloudsButton.textContent = on ? 'Clouds: on' : 'Clouds: off';
+
+	}
+
+	/** The device took the graphics away (phones do this when memory runs low); only a reload brings them back. */
+	lost() {
+
+		clearTimeout( this.bannerTimer );
+		this.banner.textContent = 'Your device reset the graphics, usually because memory ran low.';
+		const reload = el( 'button', '', 'Reload' );
+		reload.addEventListener( 'click', () => location.reload() );
+		this.banner.append( reload );
+		this.banner.classList.add( 'show' );
 
 	}
 
@@ -301,8 +359,12 @@ export class Hud {
 		this.dial.style.setProperty( '--h', `${ p.heading }deg` );
 		this.mode.textContent = p.settling ? 'Loading' : p.mode === 'walk' ? 'Walking' : 'Flying';
 
-		this.hint.textContent = this.locating ? 'Finding your location…' : p.settling ? 'Loading terrain…' : p.hasLooked ? '' : 'Hold the mouse button and drag to look around';
-		this.hint.classList.toggle( 'show', this.hint.textContent !== '' );
+		this.hint.textContent = this.locating ? 'Finding your location…' : p.settling ? 'Loading terrain…' : p.hasLooked ? ''
+			: document.body.classList.contains( 'touch' )
+				? ( upright() ? 'Drag to move and turn' : 'Drag the left side to move, the right side to look' )
+			: 'Hold the mouse button and drag to look around';
+		// an error banner says something more important, and on a phone would sit on top of the hint
+		this.hint.classList.toggle( 'show', this.hint.textContent !== '' && ! this.banner.classList.contains( 'show' ) );
 
 		// text that does not need to change every frame
 		if ( now < this.nextSlow ) return;
@@ -311,7 +373,7 @@ export class Hud {
 		const ll = this.world.toLatLng( p.position );
 		const kmh = p.speed * 3.6;
 		this.stats.innerHTML = p.settling ? '' : `
-			<span>${ Math.max( 0, p.heightAboveGround ).toFixed( p.heightAboveGround < 10 ? 1 : 0 ) } m above ground</span>
+			<span>${ Math.max( 0, p.heightAboveGround ).toFixed( p.heightAboveGround < 10 ? 1 : 0 ) } m<i> above ground</i></span>
 			<span>${ kmh.toFixed( 0 ) } km/h</span>
 			<span>${ compass( p.heading ) } ${ p.heading.toFixed( 0 ) }°</span>
 			<span>${ ll.lat.toFixed( 5 ) }, ${ ll.lng.toFixed( 5 ) }</span>

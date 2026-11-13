@@ -1,4 +1,5 @@
 import { MathUtils, Vector3, type PerspectiveCamera } from 'three';
+import { upright } from './quality';
 import type { World } from './world';
 
 export type Mode = 'walk' | 'fly';
@@ -25,6 +26,12 @@ const FLY_CLEARANCE = 1.2;
 const SPAWN_HEIGHT = 180; // metres above ground after a teleport
 const REANCHOR_DISTANCE = 1000;
 const LOOK_SENSITIVITY = 0.004; // radians per pixel dragged
+const TOUCH_LOOK_SENSITIVITY = 0.005; // a thumb has less room to travel than a mouse
+const STICK_DEAD = 8; // pixels a thumb may wander before it counts as moving
+const STICK_FULL = 60; // pixels of drag for full walking / flying pace
+const STICK_FAST = 90; // drag this far to run or boost
+const TURN_DEAD = 14; // one-thumb steering: sideways pixels ignored, so going straight stays straight
+const ONE_THUMB_PITCH = - 0.25; // one-thumb flying looks slightly down at the world, radians
 const KEY_TURN_RATE = 2.0; // rad/s when turning with the arrow keys
 const KEY_PITCH_RATE = 1.2; // rad/s when tilting the view with W / S
 const BASE_FOV = 70;
@@ -54,8 +61,16 @@ export class Player {
 	groundMisses = 0;
 	/** Scroll-wheel multiplier for flying speed. */
 	flyScale = 1;
-	/** True while a mouse button is held on the scene to look around. */
+	/** True while a mouse button or a finger is held on the scene to look around. */
 	dragging = false;
+	/**
+	 * Analog input from the touch screen, added to the keys: x sidestep, z forward, y up
+	 * (each -1..1), turn right (-1..1). z, x and turn come from the moving thumb's drag, y from
+	 * the ▲ ▼ buttons.
+	 */
+	readonly stick = { x: 0, z: 0, y: 0, turn: 0, fast: false };
+	/** True while the last thing used to steer was a finger (not the mouse or keyboard). */
+	private touching = false;
 	/** True once the mouse has been used to look, so the hint can go away. */
 	hasLooked = false;
 	/** Camera field of view in degrees; widens with speed. */
@@ -75,6 +90,12 @@ export class Player {
 	private fovTarget = BASE_FOV;
 	private bob = 0;
 	private resume: Resume | null = null;
+	private lookPointer: number | null = null;
+	private movePointer: number | null = null;
+	private lookX = 0;
+	private lookY = 0;
+	private moveX = 0;
+	private moveY = 0;
 
 	private forward = new Vector3();
 	private right = new Vector3();
@@ -93,6 +114,18 @@ export class Player {
 		this.dom = dom;
 		camera.rotation.order = 'YXZ';
 		this.bindInput();
+
+	}
+
+	/**
+	 * A phone held upright is steered with one thumb: a drag anywhere moves you forward or back
+	 * and turns you. There is no looking up or down, so the view keeps a fixed tilt and flying
+	 * forward stays level. Held sideways it is the usual two-thumb layout of mobile games: the
+	 * left half moves and the right half looks.
+	 */
+	get oneThumb(): boolean {
+
+		return this.touching && upright();
 
 	}
 
@@ -204,12 +237,13 @@ export class Player {
 
 	private axes() {
 
-		const k = this.keys;
+		const k = this.keys, t = this.stick;
+		const unit = ( v: number ) => MathUtils.clamp( v, - 1, 1 );
 		return {
-			z: ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ),
-			x: ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ),
-			y: ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ),
-			fast: k.has( 'ShiftLeft' ) || k.has( 'ShiftRight' ),
+			z: unit( ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ) + t.z ),
+			x: unit( ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ) + t.x ),
+			y: unit( ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ) + t.y ),
+			fast: k.has( 'ShiftLeft' ) || k.has( 'ShiftRight' ) || t.fast,
 		};
 
 	}
@@ -225,7 +259,9 @@ export class Player {
 		const target = this.move.set( 0, 0, 0 )
 			.addScaledVector( this.forward, a.z )
 			.addScaledVector( this.right, a.x );
-		if ( target.lengthSq() > 0 ) target.normalize().multiplyScalar( a.fast ? RUN_SPEED : WALK_SPEED );
+		// keys give full pace (a diagonal is not faster); a thumb gives pace in proportion to its drag
+		if ( target.lengthSq() > 1 ) target.normalize();
+		target.multiplyScalar( a.fast ? RUN_SPEED : WALK_SPEED );
 
 		// quick response on the ground, little control in the air
 		const blend = 1 - Math.exp( - dt * ( this.grounded ? 12 : 1.5 ) );
@@ -419,10 +455,10 @@ export class Player {
 
 		const { world, position, velocity } = this;
 		const a = this.axes();
-		const cp = Math.cos( this.pitch );
-
-		// you go where you look
-		this.forward.set( - Math.sin( this.yaw ) * cp, Math.sin( this.pitch ), - Math.cos( this.yaw ) * cp );
+		// you go where you look (one-thumb steering cannot look up or down, so it flies level)
+		const pitch = this.oneThumb ? 0 : this.pitch;
+		const cp = Math.cos( pitch );
+		this.forward.set( - Math.sin( this.yaw ) * cp, Math.sin( pitch ), - Math.cos( this.yaw ) * cp );
 		this.right.set( Math.cos( this.yaw ), 0, - Math.sin( this.yaw ) );
 
 		// faster the higher you are, so streets and whole cities both feel right
@@ -434,7 +470,7 @@ export class Player {
 		// You only move while a key is held: forward or (more slowly) backward along the view,
 		// sideways, and gently straight up or down. Let go and you come to a stop.
 		const target = this.move.set( 0, 0, 0 )
-			.addScaledVector( this.forward, a.z > 0 ? top : a.z < 0 ? - top * 0.5 : 0 )
+			.addScaledVector( this.forward, a.z > 0 ? a.z * top : a.z * top * 0.5 )
 			.addScaledVector( this.right, a.x * top * 0.5 )
 			.addScaledVector( UP, a.y * top * 0.25 );
 
@@ -481,6 +517,8 @@ export class Player {
 				this.grounded = true;
 				velocity.set( 0, 0, 0 );
 				position.y = ground + EYE;
+				// the ▼ button disappears under the finger on landing and may never hear the release
+				if ( this.stick.y < 0 ) this.stick.y = 0;
 
 			}
 
@@ -573,7 +611,8 @@ export class Player {
 
 	// --- input ----------------------------------------------------------
 
-	private look( dx: number, dy: number ) {
+	/** Turn the view by these angles (radians): positive dx turns right, positive dy looks down. */
+	look( dx: number, dy: number ) {
 
 		this.yaw -= dx;
 		this.pitch = MathUtils.clamp( this.pitch - dy, - 1.55, 1.55 );
@@ -583,9 +622,17 @@ export class Player {
 	private keyLook( dt: number ) {
 
 		const k = this.keys;
-		const x = ( k.has( 'ArrowRight' ) ? 1 : 0 ) - ( k.has( 'ArrowLeft' ) ? 1 : 0 );
+		const x = ( k.has( 'ArrowRight' ) ? 1 : 0 ) - ( k.has( 'ArrowLeft' ) ? 1 : 0 ) + this.stick.turn;
 		const y = ( k.has( 'KeyS' ) ? 1 : 0 ) - ( k.has( 'KeyW' ) ? 1 : 0 ); // W looks up, S looks down
 		if ( x || y ) this.look( x * KEY_TURN_RATE * dt, y * KEY_PITCH_RATE * dt );
+
+		// one thumb cannot tilt the view, so hold it level on foot and slightly down in the air
+		if ( this.oneThumb ) {
+
+			const rest = this.mode === 'fly' ? ONE_THUMB_PITCH : 0;
+			this.pitch += ( rest - this.pitch ) * ( 1 - Math.exp( - dt * 2.5 ) );
+
+		}
 
 		// keyboard-only walking: the view drifts back to level as you move, like classic shooters
 		const moving = k.has( 'ArrowUp' ) || k.has( 'ArrowDown' );
@@ -625,32 +672,123 @@ export class Player {
 			}
 
 			if ( e.code === 'Space' || e.code.startsWith( 'Arrow' ) ) e.preventDefault();
+			this.touching = false;
 			this.keys.add( e.code );
 
 		} );
 		window.addEventListener( 'keyup', e => this.keys.delete( e.code ) );
-		window.addEventListener( 'blur', () => this.keys.clear() );
 
-		// the mouse only steers the view while a button is held down on the scene
-		dom.addEventListener( 'mousedown', () => {
+		// Pointer events cover the mouse, fingers and pens alike.
+		// - Mouse or pen: steers the view, but only while a button is held down on the scene.
+		// - Finger, phone held sideways: the left half is an invisible thumbstick, centred wherever
+		//   the thumb lands; the right half steers the view.
+		// - Finger, phone held upright: the whole screen is that thumbstick, and sideways turns.
+		const releaseLook = () => {
 
-			this.dragging = true;
-			this.hasLooked = true;
+			this.lookPointer = null;
+			this.dragging = false;
+
+		};
+		const releaseMove = () => {
+
+			this.movePointer = null;
+			this.stick.x = this.stick.z = this.stick.turn = 0;
+			this.stick.fast = false;
+
+		};
+		const release = ( e: PointerEvent ) => {
+
+			if ( e.pointerId === this.lookPointer ) releaseLook();
+			if ( e.pointerId === this.movePointer ) releaseMove();
+
+		};
+		const letGo = () => {
+
+			this.keys.clear();
+			this.stick.y = 0;
+			releaseLook();
+			releaseMove();
+
+		};
+
+		dom.addEventListener( 'pointerdown', e => {
+
 			// leave any text box, so the keys go back to moving you
 			if ( document.activeElement instanceof HTMLElement ) document.activeElement.blur();
+			this.hasLooked = true;
+			this.touching = e.pointerType === 'touch';
+
+			// upright: any finger moves and turns. Sideways: the left half moves, the right half looks.
+			if ( e.pointerType === 'touch' && ( this.oneThumb || e.clientX < window.innerWidth / 2 ) ) {
+
+				if ( this.movePointer !== null ) return;
+				this.movePointer = e.pointerId;
+				this.moveX = e.clientX;
+				this.moveY = e.clientY;
+
+			} else {
+
+				if ( this.lookPointer !== null ) return;
+				this.lookPointer = e.pointerId;
+				this.lookX = e.clientX;
+				this.lookY = e.clientY;
+				this.dragging = true;
+
+			}
+
+			// keep receiving this pointer's moves even when it strays over the interface
+			try { dom.setPointerCapture( e.pointerId ); } catch { /* the pointer is already gone */ }
 
 		} );
+		dom.addEventListener( 'pointermove', e => {
+
+			if ( e.pointerId === this.lookPointer ) {
+
+				// a mouse release we never heard about (outside the window, behind a menu) still ends the drag
+				if ( e.pointerType === 'mouse' && e.buttons === 0 ) return releaseLook();
+				// measured from positions: Safari does not report movementX/Y reliably for touch
+				const s = e.pointerType === 'touch' ? TOUCH_LOOK_SENSITIVITY : LOOK_SENSITIVITY;
+				this.look( ( e.clientX - this.lookX ) * s, ( e.clientY - this.lookY ) * s );
+				this.lookX = e.clientX;
+				this.lookY = e.clientY;
+
+			} else if ( e.pointerId === this.movePointer ) {
+
+				const dx = e.clientX - this.moveX, dy = e.clientY - this.moveY;
+				const length = Math.hypot( dx, dy );
+				const live = length > STICK_DEAD;
+				this.stick.z = live ? MathUtils.clamp( - dy / STICK_FULL, - 1, 1 ) : 0;
+				if ( this.oneThumb ) {
+
+					// sideways drag turns instead of sidestepping
+					const side = Math.max( 0, Math.abs( dx ) - TURN_DEAD ) * Math.sign( dx );
+					this.stick.turn = MathUtils.clamp( side / STICK_FULL, - 1, 1 );
+					this.stick.x = 0;
+
+				} else {
+
+					this.stick.x = live ? MathUtils.clamp( dx / STICK_FULL, - 1, 1 ) : 0;
+					this.stick.turn = 0;
+
+				}
+
+				// one thumb: only the forward or backward part counts, so a wide turn is not a boost
+				this.stick.fast = ( this.oneThumb ? Math.abs( dy ) : length ) > STICK_FAST;
+
+			}
+
+		} );
+		dom.addEventListener( 'pointerup', release );
+		dom.addEventListener( 'pointercancel', release );
+		dom.addEventListener( 'lostpointercapture', release );
 		// no context menu over the scene: it would swallow the button release and leave the view steering
 		dom.addEventListener( 'contextmenu', e => e.preventDefault() );
-		window.addEventListener( 'mouseup', () => this.dragging = false );
-		window.addEventListener( 'blur', () => this.dragging = false );
-		window.addEventListener( 'mousemove', e => {
-
-			// a release we never heard about (outside the window, behind a menu) still ends the drag
-			if ( e.buttons === 0 ) this.dragging = false;
-			if ( this.dragging ) this.look( e.movementX * LOOK_SENSITIVITY, e.movementY * LOOK_SENSITIVITY );
-
-		} );
+		// A drag that starts at the screen edge is Safari's "go back" swipe. Claiming the touch here
+		// stops that where Safari allows it; the pointer events above still arrive.
+		dom.addEventListener( 'touchstart', e => e.preventDefault(), { passive: false } );
+		// a phone that switches apps does not always send `blur`
+		window.addEventListener( 'blur', letGo );
+		document.addEventListener( 'visibilitychange', () => { if ( document.hidden ) letGo(); } );
 
 		dom.addEventListener( 'wheel', e => {
 

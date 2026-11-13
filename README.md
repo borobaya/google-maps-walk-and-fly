@@ -31,7 +31,7 @@ The key is kept in that browser tab only. It is sent to Google and nowhere else,
 
 - [Node.js](https://nodejs.org) 20.19 or newer (or 22.12 or newer).
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
-- A reasonably recent computer. The clouds are demanding; press `K` to turn them off.
+- A reasonably recent computer, phone or tablet. The clouds are demanding; press `K` to turn them off (they start off on phones).
 
 ### 1. Get a Google API key
 
@@ -88,6 +88,34 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 
 Flying speed grows with height, so you can thread streets down low and cross a city up high.
 
+### On a phone or tablet
+
+Held sideways (landscape), it is a two-thumb game, laid out like most mobile games:
+
+| Touch | Walking | Flying |
+| --- | --- | --- |
+| Drag on the left half | move; a long drag runs | fly; a long drag boosts |
+| Drag on the right half | look around | look around |
+
+Held upright (portrait), one thumb does it all:
+
+| Touch | Walking | Flying |
+| --- | --- | --- |
+| Drag up or down, anywhere | forward / back; a long drag runs | fly forward / back; a long drag boosts |
+| Drag left or right | turn | turn |
+
+Upright there is no looking up or down: the view stays level on foot and tilted slightly down in the air, and flying forward keeps your height.
+
+Either way up, three buttons sit on the right edge:
+
+| Button | Walking | Flying |
+| --- | --- | --- |
+| ▲ | jump | climb |
+| ▼ | – | descend; touching the ground lands you |
+| Fly / Walk | take off | drop to the ground |
+
+Nothing is drawn for the drags: wherever your thumb lands is the centre, and how far you drag from there sets your pace. **Go to…** at the top right opens the place box and the clouds switch.
+
 ### Going places
 
 Use the box at the top right to pick a preset city or type `latitude, longitude` (pasting a Google Maps link also works). The address bar keeps your position, so sharing the link takes someone to the same spot.
@@ -107,6 +135,8 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 
 - **Street level is rough.** Google builds this mesh from aerial photos. It looks great from the air; up close, buildings are soft and trees are solid lumps.
 - **Coverage is Google's.** Most large cities are in 3D. Elsewhere you get flat satellite-textured terrain, and a few sensitive sites are deliberately flattened.
+- **Phones run a lighter version.** Clouds start switched off, the picture is drawn at a lower resolution (and lowered further if frames stay slow), and less of the world is kept in memory. How smooth it is depends on the phone.
+- **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
 - **Lighting is fixed.** One mid-afternoon sun everywhere; there is no night.
 - **One texture is fetched from GitHub.** The cloud renderer's noise texture loads from the three-geospatial project's host; everything else is served locally or by Google.
 
@@ -124,6 +154,8 @@ Built without a key (as the workflow does), the site asks each visitor for their
 - `src/hud.ts` and `src/main.ts` hold the interface and the render loop.
 
 Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScript. `npm run build` type-checks and produces a static site in `dist/`.
+
+With `npm run dev` running, `npm run test:touch` drives the touch controls in headless Chrome as a pretend phone and checks them ([tests/touch.mjs](tests/touch.mjs)). It loads real tiles with your key, and needs Node 22.12 or newer and Google Chrome (set `CHROME` to its path if it is not in the usual place). It has only been run on a Mac.
 
 ## Licence
 

@@ -1,6 +1,7 @@
 import { Matrix4, Raycaster, Vector3, type Camera, type Intersection, type WebGLRenderer } from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer';
+import { quality } from './quality';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins';
 
 export interface Hit {
@@ -58,10 +59,10 @@ export class World {
 		// cross-fade tiles as detail levels swap, instead of popping
 		tiles.registerPlugin( new TilesFadePlugin() );
 
-		// keep more of the world in memory and load it faster
-		tiles.lruCache.minBytesSize = 0.5 * 2 ** 30;
-		tiles.lruCache.maxBytesSize = 0.75 * 2 ** 30;
-		tiles.parseQueue.maxJobs = 10;
+		// how much of the world to keep in memory, and how fast to decode it (far less on a phone)
+		tiles.lruCache.minBytesSize = quality.cacheMin;
+		tiles.lruCache.maxBytesSize = quality.cacheMax;
+		tiles.parseQueue.maxJobs = quality.parseJobs;
 
 		// sharpen textures seen at shallow angles (the ground when walking)
 		const anisotropy = renderer.capabilities.getMaxAnisotropy();
