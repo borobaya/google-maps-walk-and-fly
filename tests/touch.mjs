@@ -263,6 +263,14 @@ await page.setViewport( SHORT );
 await sleep( 1000 );
 check( 'short landscape: nothing overlaps', ( await layout() ).length === 0, await layout() );
 const up2 = await centre( '.pad .up' ), down2 = await centre( '.pad .down' ), mode2 = await centre( '.pad .mode' );
+// the corner left of Walk and above ▼ holds no button: a touch there must reach the scene
+const corner = { x: down2.x, y: mode2.y };
+check( 'the empty corner beside the buttons belongs to the scene', await page.evaluate( p => document.elementFromPoint( p.x, p.y ).id, corner ) === 'view', corner );
+const c0 = await state();
+await down( 1, corner.x, corner.y );
+await move( 1, corner.x - 60, corner.y );
+await up( 1 );
+check( 'a drag starting in that corner looks around', ( await state() ).yaw > c0.yaw + 0.1, [ c0.yaw, ( await state() ).yaw ] );
 const h0 = await state();
 // three fingers at once: the left thumb moves, a right finger looks, another holds ▲
 await down( 1, 200, 200 );

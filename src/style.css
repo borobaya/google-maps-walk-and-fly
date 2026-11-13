@@ -255,9 +255,13 @@ body.looking #view { cursor: grabbing; }
 	user-select: none;
 	-webkit-user-select: none;
 	-webkit-touch-callout: none;
+	/* only the buttons take touches: the gaps between them, and the empty corner of the
+	   sideways layout, belong to the scene underneath */
+	pointer-events: none;
 }
 body.touch .pad { display: flex; }
 .pad button {
+	pointer-events: auto;
 	width: 56px;
 	height: 56px;
 	padding: 0;
