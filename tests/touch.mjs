@@ -457,7 +457,7 @@ check( 'no errors on the page', errors.length === 0, errors );
 		return { text: e.textContent, fits: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
 
 	} ) ).catch( () => ( { text: '', fits: false } ) );
-	check( 'on an iPhone it names Lockdown Mode and how to exclude the site', advice.text.includes( 'Lockdown Mode' ) && advice.text.includes( 'Configure Web Browsing' ) && advice.fits, advice.fits );
+	check( 'on an iPhone it names Lockdown Mode and how to exclude the site', advice.text.includes( 'Lockdown Mode' ) && advice.text.includes( 'Website Settings' ) && advice.text.includes( 'open this page in Safari' ) && advice.fits, advice.fits );
 	await locked.close();
 
 }

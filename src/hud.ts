@@ -171,9 +171,9 @@ export function showUnsupported( root: HTMLElement ) {
 			<ul>
 				<li><b>Safari on iPhone or iPad:</b> open the page menu in the address bar, choose <b>Website Settings</b> and turn off <b>Lockdown Mode</b>.</li>
 				<li><b>Safari on a Mac:</b> <b>Safari</b> menu → <b>Settings for ${ location.hostname }</b> → untick <b>Enable Lockdown Mode</b>.</li>
-				<li><b>Another browser on iPhone or iPad:</b> <b>Settings</b> → <b>Privacy &amp; Security</b> → <b>Lockdown Mode</b> → <b>Configure Web Browsing</b>, and turn that browser off in the list.</li>
+				<li><b>Another browser on iPhone or iPad</b> (Chrome, Firefox, Edge): open this page in Safari instead. Those browsers cannot exclude a single website, and may not appear in the list of apps under <b>Settings</b> → <b>Privacy &amp; Security</b> → <b>Lockdown Mode</b>.</li>
 			</ul>
-			<p class="muted">Then reload. Excluding a website or app lowers Lockdown Mode's protection for it, so only do this if you trust this page.</p>
+			<p class="muted">Then reload. Excluding a website lowers Lockdown Mode's protection for it, so only do this if you trust this page.</p>
 			<p class="muted">Not using Lockdown Mode? Then updating the browser, or trying a newer device, usually fixes this.</p>
 		` : `
 			<p class="muted">Updating the browser, or trying a newer phone or computer, usually fixes this.</p>
