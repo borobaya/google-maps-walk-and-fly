@@ -42,6 +42,15 @@ html, body {
    reloads and turns, and the scene underneath would not let you pinch back out */
 #ui > * { position: fixed; touch-action: pan-x pan-y; }
 
+/* Opened from the home screen, iOS sometimes reports a viewport shorter than the screen by the
+   status bar's height while still starting the page at the very top, which left a bare strip
+   along the bottom. With nothing covering any of the screen there, the large viewport (lvh) is
+   the true size: sized to it, the page and the scene fill the screen, and what sits at the
+   bottom is placed from the screen's real bottom edge. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+	html, body, #view { height: 100lvh; }
+}
+
 .panel {
 	background: var(--panel);
 	border: 1px solid var(--line);

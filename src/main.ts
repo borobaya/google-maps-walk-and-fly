@@ -205,9 +205,11 @@ function start( key: string, typed: boolean ) {
 
 	const resize = () => {
 
-		renderer.setSize( window.innerWidth, window.innerHeight, false );
-		atmosphere.setSize( window.innerWidth, window.innerHeight );
-		camera.aspect = window.innerWidth / window.innerHeight;
+		// the scene's own size: in a home-screen app it can be taller than the window says (see style.css)
+		const width = canvas.clientWidth || window.innerWidth, height = canvas.clientHeight || window.innerHeight;
+		renderer.setSize( width, height, false );
+		atmosphere.setSize( width, height );
+		camera.aspect = width / height;
 		camera.updateProjectionMatrix();
 		world.tiles.setResolutionFromRenderer( camera, renderer );
 
