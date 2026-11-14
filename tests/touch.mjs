@@ -5,41 +5,17 @@
 //
 // It loads real tiles, so it needs the network and takes a couple of minutes.
 // TEST_URL and CHROME override where the app is served and which browser is used.
-import puppeteer from 'puppeteer-core';
+import { LANDSCAPE, PORTRAIT, SHORT, check, finish, guard, launch, layout as layoutOf, loaded as loadedOn, sleep } from './lib.mjs';
 
 const PAGE = `${ process.env.TEST_URL ?? 'http://localhost:5173/' }?profile=phone#51.50800,-0.12810`; // Trafalgar Square: open, level ground
-const CHROME = process.env.CHROME ?? {
-	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-}[ process.platform ] ?? '/usr/bin/google-chrome';
-// headless Chrome needs to be told to use the real graphics chip; how differs by system
-const GPU = [ '--enable-gpu', '--ignore-gpu-blocklist', ...( process.platform === 'darwin' ? [ '--use-angle=metal' ] : [] ) ];
-const PORTRAIT = { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
-const LANDSCAPE = { ...PORTRAIT, width: 844, height: 390, isLandscape: true };
-const SHORT = { ...LANDSCAPE, height: 292 }; // what Safari leaves on an iPhone held sideways, with its bars showing
-
-const sleep = ms => new Promise( r => setTimeout( r, ms ) );
-const browser = await puppeteer.launch( {
-	executablePath: CHROME,
-	headless: true,
-	args: [ ...GPU, '--window-size=390,844' ],
-	defaultViewport: PORTRAIT,
-} );
+const browser = await launch( PORTRAIT, [ '--window-size=390,844' ] );
 // the browser will say we are at the Sydney Opera House, for the My location button
 await browser.defaultBrowserContext().overridePermissions( new URL( PAGE ).origin, [ 'geolocation' ] );
 const page = await browser.newPage();
 await page.setGeolocation( { latitude: - 33.8568, longitude: 151.2153 } );
 const errors = [];
-page.on( 'pageerror', e => errors.push( e.message ) );
+await guard( page, errors );
 const cdp = await page.createCDPSession();
-
-let failed = 0;
-const check = ( name, ok, detail ) => {
-
-	if ( ! ok ) failed ++;
-	console.log( `${ ok ? 'ok  ' : 'FAIL' } ${ name }${ detail === undefined ? '' : `  ${ JSON.stringify( detail ) }` }` );
-
-};
 
 // several fingers at once: keep the set that is down and send it whole each time
 const fingers = new Map();
@@ -73,41 +49,8 @@ const state = () => page.evaluate( () => ( {
 	speed: + player.speed.toFixed( 1 ), yaw: + player.yaw.toFixed( 3 ), pitch: + player.pitch.toFixed( 2 ),
 	y: + player.position.y.toFixed( 1 ), agl: + player.heightAboveGround.toFixed( 2 ),
 } ) );
-// every visible piece of the interface: which pairs overlap, and which poke off the screen
-const layout = () => page.evaluate( () => {
-
-	const names = [ '.status', '.compass', '.goto-open', '.goto', '.pad .mode', '.pad .up', '.pad .down', '.credits', '.hint', '.help' ];
-	const boxes = [];
-	for ( const name of names ) {
-
-		const node = document.querySelector( name ), style = getComputedStyle( node ), r = node.getBoundingClientRect();
-		if ( style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || r.width === 0 ) continue;
-		boxes.push( { name, r } );
-
-	}
-
-	const problems = [];
-	for ( const { name, r } of boxes ) if ( r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5 ) problems.push( `${ name } off screen` );
-	for ( let i = 0; i < boxes.length; i ++ ) for ( let j = i + 1; j < boxes.length; j ++ ) {
-
-		const a = boxes[ i ].r, b = boxes[ j ].r;
-		if ( a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5 ) problems.push( `${ boxes[ i ].name } over ${ boxes[ j ].name }` );
-
-	}
-
-	return problems;
-
-} );
-const loaded = async () => {
-
-	for ( let i = 0, steady = 0; i < 200 && steady < 8; i ++ ) {
-
-		steady = await page.evaluate( () => world.tiles.loadProgress ) >= 1 ? steady + 1 : 0;
-		await sleep( 200 );
-
-	}
-
-};
+const layout = () => layoutOf( page );
+const loaded = () => loadedOn( page );
 
 await page.goto( PAGE, { waitUntil: 'domcontentloaded' } );
 await page.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
@@ -475,7 +418,7 @@ check( 'no errors on the page', errors.length === 0, errors );
 
 	const laptop = await browser.newPage();
 	const problems = [];
-	laptop.on( 'pageerror', e => problems.push( e.message ) );
+	await guard( laptop, problems );
 	await laptop.setViewport( { width: 1280, height: 720, hasTouch: true, isLandscape: true } );
 	await laptop.goto( PAGE.replace( 'profile=phone', 'profile=desktop' ), { waitUntil: 'domcontentloaded' } );
 	await laptop.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
@@ -537,33 +480,5 @@ check( 'no errors on the page', errors.length === 0, errors );
 
 }
 
-// --- a browser that cannot draw it at all ----------------------------------------
-{
-
-	const old = await browser.newPage();
-	await old.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
-	await old.goto( PAGE, { waitUntil: 'domcontentloaded' } );
-	const said = await old.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => e.textContent ) ).catch( () => '' );
-	check( 'a browser without WebGL gets an explanation, not a blank page', said.includes( 'cannot draw the 3D world' ) && ! said.includes( 'Lockdown' ), said.trim().slice( 0, 80 ) );
-	await old.close();
-
-	// Safari's engine with WebGL off is most often Apple's Lockdown Mode: say how to exclude the site
-	const locked = await browser.newPage();
-	await locked.setUserAgent( 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1' );
-	await locked.setViewport( { width: 320, height: 568, isMobile: true, hasTouch: true } );
-	await locked.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
-	await locked.goto( PAGE, { waitUntil: 'domcontentloaded' } );
-	const advice = await locked.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => {
-
-		const r = e.getBoundingClientRect();
-		return { text: e.textContent, fits: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
-
-	} ) ).catch( () => ( { text: '', fits: false } ) );
-	check( 'on an iPhone it names Lockdown Mode and how to exclude the site', advice.text.includes( 'Lockdown Mode' ) && advice.text.includes( 'Website Settings' ) && advice.text.includes( 'open this page in Safari' ) && advice.fits, advice.fits );
-	await locked.close();
-
-}
-
 await browser.close();
-console.log( failed ? `\n${ failed } failed` : '\nall passed' );
-process.exit( failed ? 1 : 0 );
+finish();

@@ -1,0 +1,31 @@
+# Type-checks and builds the app, then runs the checks that need no API key (tests/nokey.mjs)
+# in headless Chrome. The touch and desktop suites load real map tiles with your key, so they
+# are run on your own computer instead (see the README).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nokey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # GitHub's machines have Chrome but no graphics chip: draw in software instead
+      - run: npm test
+        env:
+          SOFTWARE: '1'
+          CHROME: /usr/bin/google-chrome
