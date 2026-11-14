@@ -288,15 +288,15 @@ body[data-mode='walk'] .pad .down { display: block; visibility: hidden; }
 body.touch .help { display: none; }
 body.touch .goto .clouds, body.touch .goto .fullscreen { display: block; }
 /* iOS zooms the page when a focused input's text is under 16px */
-body.touch .goto input, body.touch .goto select, body.touch .setup input, .setup input { font-size: 16px; }
+body.touch .goto input, body.touch .goto select, body.touch .setup input, .setup form input { font-size: 16px; }
 /* thumbs cover the bottom of the screen, so the hint goes higher up: below the status panel,
    compass and go-to box, which reach about 90px down on a narrow screen and 120px on a wide one */
 body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-width: 80vw; text-align: center; border-radius: 14px; }
 
 /* --- small screens (a phone either way up) ------------------------------- */
-/* Below 860px wide the go-to box would reach the compass, so it folds away behind a button.
+/* Below about 890px wide the go-to box would reach the compass, so it folds away behind a button.
    Open, it drops down below the status panel and compass. */
-@media (max-width: 860px), (max-height: 500px) {
+@media (max-width: 920px), (max-height: 500px) {
 	.goto-open { display: block; }
 	.goto:not(.open) { display: none; }
 	/* a set width, padding included: left to size itself, Safari makes it wider than the screen */
