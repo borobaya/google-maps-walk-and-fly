@@ -15,6 +15,9 @@ const page = await browser.newPage();
 await page.setGeolocation( { latitude: - 33.8568, longitude: 151.2153 } );
 const errors = [];
 await guard( page, errors );
+// a phone never switches the clouds on, so it should never fetch their code or textures
+const cloudFiles = [];
+page.on( 'request', r => { if ( /three-clouds|three_clouds|\/clouds[-/]/.test( new URL( r.url() ).pathname ) ) cloudFiles.push( new URL( r.url() ).pathname ); } );
 const cdp = await page.createCDPSession();
 
 // several fingers at once: keep the set that is down and send it whole each time
@@ -71,6 +74,7 @@ const profile = await page.evaluate( () => {
 
 } );
 check( 'phone profile: buttons shown, clouds off', profile.touch && ! profile.clouds && await shown( '.pad' ), profile );
+check( 'a phone fetches none of the clouds\' code or textures', cloudFiles.length === 0, cloudFiles );
 check( 'portrait hint', profile.hint === 'Drag to move and turn', profile.hint );
 check( 'hint is clear of the status panel and compass', ! profile.hintOverlaps );
 

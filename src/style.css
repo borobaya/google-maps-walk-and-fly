@@ -132,6 +132,8 @@ html, body {
 .goto select { max-width: 110px; }
 .goto option { color: #111; }
 .goto :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* every button shows where the keyboard is */
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; gap: 6px; color: var(--muted); pointer-events: none; }
 .help.hidden { display: none; }
@@ -344,3 +346,8 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 
 /* U key: hide everything except the required attribution */
 body.bare #ui > :not(.credits):not(.banner) { display: none; }
+
+/* asked for less motion: nothing fades or slides (the view itself keeps still too; see player.ts) */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after { transition: none !important; }
+}

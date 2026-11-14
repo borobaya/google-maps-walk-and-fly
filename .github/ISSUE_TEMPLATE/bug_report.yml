@@ -1,0 +1,58 @@
+name: Something isn't working
+description: The app misbehaves, looks wrong or won't load.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Please don't paste your Google API key anywhere in this form.
+        If the problem could expose someone's key, report it privately instead: **Security** tab → **Report a vulnerability**.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and system
+      placeholder: e.g. iPhone 16, iOS 26.1 / MacBook Air, macOS 26 / Pixel 9, Android 16
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: e.g. Safari 26 / Chrome 142
+    validations:
+      required: true
+  - type: dropdown
+    id: opened
+    attributes:
+      label: How was it opened?
+      options:
+        - In a browser tab
+        - From the home screen (installed)
+    validations:
+      required: true
+  - type: dropdown
+    id: lockdown
+    attributes:
+      label: Is Apple's Lockdown Mode on?
+      description: It switches off 3D graphics unless the site is excluded.
+      options:
+        - "No"
+        - "Yes"
+        - Not an Apple device
+        - Don't know
+  - type: input
+    id: place
+    attributes:
+      label: Link to the place
+      description: Copy the address bar; it holds your position. Leave it out if it is somewhere private, such as your home.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, what you were doing at the time, whether it happens every time.

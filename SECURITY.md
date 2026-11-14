@@ -1,8 +1,8 @@
 # Security
 
 Walk & Fly runs entirely in the visitor's browser and keeps their Google API key there. The page's
-content security policy (in `vite.config.ts`) lets it talk only to Google and to the host of one
-cloud texture, and `npm test` checks that the key reaches Google and nowhere else.
+content security policy (in `vite.config.ts`) lets it talk only to Google, and `npm test` checks
+that the key reaches Google and nowhere else.
 
 ## Reporting a problem
 

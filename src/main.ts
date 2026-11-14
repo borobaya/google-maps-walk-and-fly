@@ -10,6 +10,17 @@ import './style.css';
 const EARTH_RADIUS = 6371000;
 
 const ui = document.getElementById( 'ui' )!;
+// The built site keeps itself on the device, so the home-screen app opens straight away, even with
+// no signal (see the service worker in vite.config.ts). It never stores Google's tiles or the key.
+if ( import.meta.env.PROD && 'serviceWorker' in navigator ) {
+
+	window.addEventListener( 'load', () => {
+
+		navigator.serviceWorker.register( './sw.js' ).catch( () => { /* not allowed here (private browsing, Lockdown Mode): the page works without it */ } );
+
+	} );
+
+}
 // Safari on iPhone and iPad ignores the page's wish not to be pinch-zoomed; its own gesture
 // events still let us refuse (a zoomed page leaves the buttons off screen or out of reach)
 for ( const type of [ 'gesturestart', 'gesturechange' ] ) document.addEventListener( type, e => e.preventDefault(), { passive: false } );
@@ -98,6 +109,7 @@ function start( key: string, typed: boolean ) {
 	const hud = new Hud( ui, player, world, key, changeKey );
 	world.onError = ( message, fatal ) => hud.error( message, fatal );
 	hud.onClouds = () => atmosphere.toggleClouds();
+	atmosphere.onLoadFailed = () => hud.outdated();
 	hud.showClouds( atmosphere.cloudsEnabled );
 	addTouchControls( ui, player );
 	// phones take the graphics away when memory runs low; say so instead of showing a frozen picture

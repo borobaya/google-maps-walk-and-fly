@@ -1,6 +1,7 @@
-# Type-checks and builds the app, then runs the checks that need no API key (tests/nokey.mjs)
-# in headless Chrome. The touch and desktop suites load real map tiles with your key, so they
-# are run on your own computer instead (see the README).
+# Type-checks and builds the app, then runs the checks that need no API key (tests/nokey.mjs) in
+# Chrome and in WebKit, the engine of Safari and of every browser on an iPhone or iPad. The touch
+# and desktop suites load real map tiles with your key, so they are run on your own computer
+# instead (see the README).
 name: Tests
 
 on:
@@ -16,6 +17,10 @@ jobs:
   nokey:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, webkit]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -23,9 +28,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # oxlint, with type-aware rules (they run on TypeScript 7's own engine)
+      - run: npm run lint
       - run: npm run build
-      # GitHub's machines have Chrome but no graphics chip: draw in software instead
-      - run: npm test
+      - if: matrix.browser == 'webkit'
+        run: npx playwright-core install --with-deps webkit
+      # GitHub's machines have no graphics chip: Chrome is told to draw in software, and every
+      # browser gets a virtual display to draw into
+      - run: xvfb-run --auto-servernum npm run test:${{ matrix.browser }}
         env:
           SOFTWARE: '1'
           CHROME: /usr/bin/google-chrome

@@ -13,6 +13,10 @@ const browser = await launch( { width: 1280, height: 720 }, [ '--window-size=128
 const page = await browser.newPage();
 const errors = [];
 await guard( page, errors );
+// every other site the page talks to, with real tiles and clouds on: only Google's are allowed
+const GOOGLE = [ 'tile.googleapis.com', 'maps.googleapis.com', 'maps.gstatic.com' ];
+const hosts = new Set();
+page.on( 'request', r => { const url = new URL( r.url() ); if ( url.protocol.startsWith( 'http' ) && url.origin !== new URL( PAGE ).origin ) hosts.add( url.host ); } );
 
 const state = () => page.evaluate( () => ( {
 	mode: player.mode, x: player.position.x, y: player.position.y, z: player.position.z,
@@ -286,6 +290,32 @@ await sleep( 300 );
 
 }
 
+// asked for less motion: a boosted turn in the air neither banks nor widens the view
+{
+
+	const turn = async () => {
+
+		await page.mouse.click( 400, 400 );
+		await page.keyboard.down( 'ShiftLeft' ); await page.keyboard.down( 'ArrowUp' ); await page.keyboard.down( 'ArrowLeft' );
+		await sleep( 1500 );
+		const s = await page.evaluate( () => ( { mode: player.mode, roll: + player.camera.rotation.z.toFixed( 3 ), fov: + player.fov.toFixed( 1 ) } ) );
+		await page.keyboard.up( 'ArrowLeft' ); await page.keyboard.up( 'ArrowUp' ); await page.keyboard.up( 'ShiftLeft' );
+		await sleep( 1500 );
+		return s;
+
+	};
+	if ( ( await state() ).mode !== 'fly' ) await page.keyboard.press( 'KeyF' );
+	const usual = await turn();
+	await page.emulateMediaFeatures( [ { name: 'prefers-reduced-motion', value: 'reduce' } ] );
+	const calm = await turn();
+	await page.emulateMediaFeatures( [] );
+	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.fov > 75 && Math.abs( calm.roll ) < 0.01 && calm.fov < 70.5, { usual, calm } );
+
+}
+
+const sky = await page.evaluate( () => ( { clouds: atmosphere.cloudsEnabled, noise: !! atmosphere.clouds?.stbnTexture?.image } ) );
+check( 'the clouds\' noise texture comes from the site itself', sky.clouds && sky.noise, sky );
+check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => GOOGLE.includes( h ) ), [ ...hosts ] );
 check( 'no errors on the page', errors.length === 0, errors );
 await browser.close();
 finish();

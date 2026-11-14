@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem privately
+    url: https://github.com/borobaya/google-maps-walk-and-fly/security/advisories/new
+    about: Anything that could expose a visitor's API key, or another security problem. Please don't open a public issue for these.

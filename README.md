@@ -23,7 +23,7 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 Open <https://borobaya.github.io/google-maps-walk-and-fly/> and paste a Google Maps Platform API key ([how to get one](#1-get-a-google-api-key)). If you restrict the key to websites, add `https://borobaya.github.io/*`.
 
-The key is sent to Google and nowhere else: the page's security policy lets it talk only to Google (and, for the clouds, fetch one texture from GitHub). It is remembered in that browser on that device until you choose **Change API key**; untick **Remember the key on this device** on a shared computer and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
+The key is sent to Google and nowhere else: the page's security policy lets it talk only to Google. It is remembered in that browser on that device until you choose **Change API key**; untick **Remember the key on this device** on a shared computer and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
 
 **On a phone, without the browser's bars:** add the page to your home screen (in Safari: Share → Add to Home Screen; in Chrome on Android: menu → Add to Home screen) and open it from there. The home-screen app keeps its own storage, so it asks for the key once more the first time. On Android, iPad and desktop there is also a **Fullscreen** button in the place box.
 
@@ -31,7 +31,7 @@ The key is sent to Google and nowhere else: the page's security policy lets it t
 
 ### What you need
 
-- [Node.js](https://nodejs.org) 20.19 or newer (or 22.12 or newer).
+- [Node.js](https://nodejs.org) 22.12 or newer.
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
 - A reasonably recent computer, phone or tablet. The clouds are demanding; press `K` to turn them off (phones and tablets go without them).
 
@@ -141,7 +141,6 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 - **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
 - **Apple's Lockdown Mode blocks it.** Lockdown Mode switches off 3D graphics in Safari on a Mac and in every browser on iPhone and iPad. The page says so and explains how to exclude just this website in Safari. Chrome and other browsers on iPhone and iPad cannot do that, so use Safari there.
 - **Lighting is fixed.** One mid-afternoon sun everywhere; there is no night.
-- **One texture is fetched from GitHub.** The cloud renderer's noise texture loads from the three-geospatial project's host; everything else is served locally or by Google.
 
 ## Putting it online
 
@@ -157,20 +156,20 @@ Built without a key (as the workflow does), the site asks each visitor for their
 - `src/hud.ts` and `src/main.ts` hold the interface and the render loop.
 - `vite.config.ts` writes the page's content security policy: the hosts it may load from and talk to. A new host has to be added there, deliberately.
 
-Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScript. `npm run build` type-checks and produces a static site in `dist/`.
+Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScript. `npm run build` type-checks and produces a static site in `dist/`; `npm run lint` checks the code with [oxlint](https://oxc.rs), including rules that use TypeScript's types (such as promises left unhandled).
 
 ### Tests
 
-Three suites drive the app in headless Chrome and check what it does. They need Node 22.12 or newer and Google Chrome (set `CHROME` to its path if it is not in the usual place).
+Three suites drive the app in a browser and check what it does. They need Google Chrome (set `CHROME` to its path if it is not in the usual place).
 
 | Command | What it checks | Needs |
 | --- | --- | --- |
-| `npm test` ([tests/nokey.mjs](tests/nokey.mjs)) | the key screen and how the key is kept, that the key reaches only Google and the page refuses to send anything elsewhere, where you begin, links, the home-screen app, page zoom, and what a browser without 3D graphics is told | nothing: it serves the app itself with no key and types a made-up one |
+| `npm test` ([tests/nokey.mjs](tests/nokey.mjs)) | the key screen and how the key is kept, that the key reaches only Google and the page refuses to send anything elsewhere, where you begin, links, the home-screen app, page zoom, and what a browser without 3D graphics is told; in Chrome and in WebKit, Safari's engine | nothing: it serves the app itself with no key and types a made-up one |
 | `npm run test:touch` ([tests/touch.mjs](tests/touch.mjs)) | the phone and tablet controls, upright and sideways, the buttons, the place box, layouts at many sizes, and coping with a slow phone | `npm run dev` running, with your key |
 | `npm run test:desktop` ([tests/desktop.mjs](tests/desktop.mjs)) | the keyboard and mouse, walking the streets, the place box (including search by name, if your key allows it), and layouts at window sizes from 400 to 1920 wide | `npm run dev` running, with your key |
 
-`npm test` runs on GitHub with every push and pull request ([workflow](.github/workflows/tests.yml)), drawing in software as GitHub's machines have no graphics chip (`SOFTWARE=1` does the same locally). The other two load real map tiles, billed to your key, so they are run by hand; they take a couple of minutes each and have only been run on a Mac.
+`npm test` runs in WebKit too once Playwright's copy is installed (`npx playwright-core install webkit`, once); `npm run test:chrome` and `npm run test:webkit` run one browser each. It runs in both on GitHub with every push and pull request ([workflow](.github/workflows/tests.yml)), drawing in software as GitHub's machines have no graphics chip (`SOFTWARE=1` does the same locally). The other two suites load real map tiles, billed to your key, so they are run by hand; they take a couple of minutes each and have only been run on a Mac.
 
 ## Licence
 
-The code is released under the [MIT licence](LICENSE). Two sets of bundled files keep their own licences: the Draco decoder in `public/draco/` ([Apache 2.0](public/draco/LICENSE), from Google) and the cloud textures in `public/clouds/` ([MIT](public/clouds/LICENSE), from three-geospatial). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence. Nor is the Google Maps logo (`public/google-maps-logo.svg`), which is Google's trademark and is shown unmodified as its attribution rules require.
+The code is released under the [MIT licence](LICENSE). Two sets of bundled files keep their own licences: the Draco decoder, which comes with three.js ([Apache 2.0](https://github.com/google/draco/blob/main/LICENSE), from Google), and the cloud textures in `public/clouds/` ([MIT](public/clouds/LICENSE), from three-geospatial). The map data is Google's and its providers', used under the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms); it is not covered by this licence. Nor is the Google Maps logo (`public/google-maps-logo.svg`), which is Google's trademark and is shown unmodified as its attribution rules require.

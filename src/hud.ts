@@ -205,6 +205,7 @@ export class Hud {
 	private banner = el( 'div', 'banner' );
 	private help = el( 'div', 'panel help' );
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
+	private compass = el( 'div', 'compass' );
 	private note = el( 'div', 'note' );
 	/** A laptop's touchscreen has no K key; a phone has no clouds at all (too costly), so no button. */
 	private cloudsButton = quality.phone ? null : el( 'button', 'clouds' );
@@ -329,8 +330,18 @@ export class Hud {
 		const open = el( 'button', 'panel goto-open', 'Go to…' );
 		open.type = 'button';
 		open.setAttribute( 'aria-label', 'Go to a place, and settings' );
-		open.addEventListener( 'click', () => go.classList.toggle( 'open' ) );
-		const close = () => go.classList.remove( 'open' );
+		open.setAttribute( 'aria-expanded', 'false' );
+		const show = ( on: boolean ) => { go.classList.toggle( 'open', on ); open.setAttribute( 'aria-expanded', String( on ) ); };
+		open.addEventListener( 'click', () => show( ! go.classList.contains( 'open' ) ) );
+		const close = () => show( false );
+		// Escape puts it away too, and hands the keyboard back to its button
+		window.addEventListener( 'keydown', e => {
+
+			if ( e.key !== 'Escape' || ! go.classList.contains( 'open' ) ) return;
+			close();
+			if ( getComputedStyle( open ).display !== 'none' ) open.focus();
+
+		} );
 		// touching the scene (or anything else) puts the box away again
 		window.addEventListener( 'pointerdown', e => {
 
@@ -340,9 +351,8 @@ export class Hud {
 
 		} );
 
-		go.addEventListener( 'submit', async e => {
+		const submit = async () => {
 
-			e.preventDefault();
 			const text = input.value.trim();
 			if ( ! text ) return;
 			this.note.textContent = '';
@@ -372,6 +382,12 @@ export class Hud {
 			input.blur();
 			close();
 			this.onGoTo?.( ll.lat, ll.lng );
+
+		};
+		go.addEventListener( 'submit', e => {
+
+			e.preventDefault();
+			submit().catch( ( error: unknown ) => console.error( error ) );
 
 		} );
 		select.addEventListener( 'change', () => {
@@ -410,9 +426,12 @@ export class Hud {
 		logo.alt = 'Google Maps';
 		credits.append( this.credit, logo );
 
-		const compass = el( 'div', 'compass' );
-		compass.append( this.dial );
-		root.append( compass, status, open, go, this.help, this.hint, credits, this.banner );
+		// read out as the way you face; the turning letters are only for the eye
+		this.compass.setAttribute( 'role', 'img' );
+		this.compass.setAttribute( 'aria-label', 'Facing north' ); // kept up to date in `update`
+		this.dial.setAttribute( 'aria-hidden', 'true' );
+		this.compass.append( this.dial );
+		root.append( this.compass, status, open, go, this.help, this.hint, credits, this.banner );
 
 	}
 
@@ -425,8 +444,21 @@ export class Hud {
 	/** The device took the graphics away (phones do this when memory runs low); only a reload brings them back. */
 	lost() {
 
+		this.offerReload( 'Your device reset the graphics, usually because memory ran low.' );
+
+	}
+
+	/** Part of the app could not be fetched, most likely because a newer version went up while this page was open. */
+	outdated() {
+
+		this.offerReload( 'This page is out of date: a newer version is online. Reload to finish updating.' );
+
+	}
+
+	private offerReload( message: string ) {
+
 		clearTimeout( this.bannerTimer );
-		this.banner.textContent = 'Your device reset the graphics, usually because memory ran low.';
+		this.banner.textContent = message;
 		const reload = el( 'button', '', 'Reload' );
 		reload.addEventListener( 'click', () => location.reload() );
 		this.banner.append( reload );
@@ -480,6 +512,8 @@ export class Hud {
 		if ( now < this.nextSlow ) return;
 		this.nextSlow = now + 200;
 
+		const facing = `Facing ${ DIRECTIONS[ Math.round( p.heading / 45 ) % 8 ] }`;
+		if ( this.compass.getAttribute( 'aria-label' ) !== facing ) this.compass.setAttribute( 'aria-label', facing );
 		const ll = this.world.toLatLng( p.position );
 		const kmh = p.speed * 3.6;
 		this.stats.innerHTML = p.settling ? '' : `
@@ -495,6 +529,8 @@ export class Hud {
 	}
 
 }
+
+const DIRECTIONS = [ 'north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west' ];
 
 function compass( deg: number ) {
 

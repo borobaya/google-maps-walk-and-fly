@@ -1,5 +1,5 @@
 import { Matrix4, Raycaster, Vector3, type Camera, type Intersection, type WebGLRenderer } from 'three';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { DRACO_GLTF_CONFIG, DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { quality } from './quality';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins';
@@ -53,7 +53,8 @@ export class World {
 		tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: apiKey, autoRefreshToken: true } ) );
 		tiles.registerPlugin( new TileCompressionPlugin() );
 		tiles.registerPlugin( new GLTFExtensionsPlugin( {
-			dracoLoader: new DRACOLoader().setDecoderPath( `${ import.meta.env.BASE_URL }draco/` ),
+			// three.js's own decoder (the glTF build), bundled by Vite with the rest of the app
+			dracoLoader: new DRACOLoader().setDecoderPath( DRACO_GLTF_CONFIG ),
 		} ) );
 
 		// cross-fade tiles as detail levels swap, instead of popping

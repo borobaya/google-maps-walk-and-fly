@@ -35,6 +35,8 @@ const ONE_THUMB_PITCH = - 0.25; // one-thumb flying looks slightly down at the w
 const KEY_TURN_RATE = 2.0; // rad/s when turning with the arrow keys
 const KEY_PITCH_RATE = 1.2; // rad/s when tilting the view with W / S
 const BASE_FOV = 70;
+/** The device's "reduce motion" setting: no banking, no widening with speed, no bounce in your step. */
+const LESS_MOTION = matchMedia( '(prefers-reduced-motion: reduce)' );
 const MAX_DROP = 150; // a ground reading this far below the last one is not believed straight away
 const BODY = 1.0; // when flying, stay at least this far from walls on every side
 const FEELER = 60; // how far to look for nearby walls, metres
@@ -610,17 +612,18 @@ export class Player {
 
 		}
 
-		// bank into turns when flying
+		// bank into turns when flying (not when the device asks for less motion)
 		this.yawRate += ( yawRate - this.yawRate ) * ( 1 - Math.exp( - dt * 8 ) );
 		const a = this.axes();
-		const bank = this.mode === 'fly' && ! this.settling
+		const calm = LESS_MOTION.matches;
+		const bank = this.mode === 'fly' && ! this.settling && ! calm
 			? MathUtils.clamp( this.yawRate * 0.22, - 0.6, 0.6 ) - a.x * 0.1
 			: 0;
 		this.roll += ( bank - this.roll ) * ( 1 - Math.exp( - dt * 4 ) );
-		this.fov += ( ( this.settling ? BASE_FOV : this.fovTarget ) - this.fov ) * ( 1 - Math.exp( - dt * 3 ) );
+		this.fov += ( ( this.settling || calm ? BASE_FOV : this.fovTarget ) - this.fov ) * ( 1 - Math.exp( - dt * 3 ) );
 
 		// a slight bounce in your step
-		const bounce = this.mode === 'walk' && this.grounded ? Math.sin( this.bob ) * 0.03 : 0;
+		const bounce = this.mode === 'walk' && this.grounded && ! calm ? Math.sin( this.bob ) * 0.03 : 0;
 		cam.position.set( this.position.x, this.renderY + bounce, this.position.z );
 		cam.rotation.set( this.pitch, this.yaw, this.roll );
 		cam.updateMatrixWorld();

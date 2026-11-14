@@ -6,8 +6,10 @@ import { EffectComposer, EffectPass, RenderPass, SMAAEffect, ToneMappingEffect, 
 import {
 	AerialPerspectiveEffect, PrecomputedTexturesGenerator,
 } from '@takram/three-atmosphere';
-import { CLOUD_SHAPE_DETAIL_TEXTURE_SIZE, CLOUD_SHAPE_TEXTURE_SIZE, CloudsEffect } from '@takram/three-clouds';
-import { DEFAULT_STBN_URL, DataTextureLoader, STBNLoader, parseUint8Array } from '@takram/three-geospatial';
+// the clouds' code is fetched only when they are first switched on: phones never use it
+import type { CloudsEffect } from '@takram/three-clouds';
+type CloudsModule = typeof import( '@takram/three-clouds' );
+import { DataTextureLoader, STBNLoader, parseUint8Array } from '@takram/three-geospatial';
 
 // A fixed mid-afternoon sun: 50 degrees up in the south-west (scene axes: +Y up, +Z north, -X east).
 const SUN_ELEVATION = 50 * Math.PI / 180;
@@ -51,6 +53,10 @@ export class Atmosphere {
 	private skyPass: SkyPass | null = null;
 	private textures: object;
 	private camera: Camera;
+	private cloudsModule: CloudsModule | null = null;
+	private cloudsLoading = false;
+	/** Called if the clouds' code cannot be fetched (most likely: a newer version went up meanwhile). */
+	onLoadFailed: ( () => void ) | null = null;
 
 	constructor( renderer: WebGLRenderer, scene: Scene, camera: Camera, clouds: boolean ) {
 
@@ -93,14 +99,16 @@ export class Atmosphere {
 	 */
 	private buildSkyPass() {
 
-		if ( this.cloudsOn && ! this.clouds ) {
+		if ( this.cloudsOn && ! this.clouds && ! this.cloudsModule ) this.loadClouds();
+		if ( this.cloudsOn && ! this.clouds && this.cloudsModule ) {
 
-			this.clouds = this.createClouds( this.camera );
+			this.clouds = this.createClouds( this.cloudsModule, this.camera );
 			Object.assign( this.clouds, this.textures );
 			this.clouds?.sunDirection.copy( this.sun );
 
 		}
 
+		// until their code arrives, the sky is drawn without them
 		const clouds = this.cloudsOn ? this.clouds : null;
 		this.aerial.overlay = clouds ? clouds.atmosphereOverlay : null;
 		// cloud shadows are deliberately not passed on, so the ground stays evenly lit
@@ -138,8 +146,28 @@ export class Atmosphere {
 
 	}
 
+	/** Fetches the clouds' code once, then builds them if they are still wanted. */
+	private loadClouds() {
+
+		if ( this.cloudsLoading ) return;
+		this.cloudsLoading = true;
+		import( '@takram/three-clouds' ).then( module => {
+
+			this.cloudsModule = module;
+			if ( this.cloudsOn ) this.buildSkyPass();
+
+		}, ( error: unknown ) => {
+
+			console.error( error );
+			this.cloudsLoading = false; // switching them on again tries again
+			this.onLoadFailed?.();
+
+		} );
+
+	}
+
 	/** Volumetric clouds, drawn into a buffer that the aerial-perspective effect composites over the scene. */
-	private createClouds( camera: Camera ): CloudsEffect {
+	private createClouds( { CloudsEffect, CLOUD_SHAPE_TEXTURE_SIZE, CLOUD_SHAPE_DETAIL_TEXTURE_SIZE }: CloudsModule, camera: Camera ): CloudsEffect {
 
 		const clouds = new CloudsEffect( camera );
 		clouds.qualityPreset = 'medium';
@@ -168,8 +196,8 @@ export class Atmosphere {
 		clouds.turbulenceTexture = tiled( `${ base }turbulence.png` );
 		clouds.shapeTexture = volume( `${ base }shape.bin`, CLOUD_SHAPE_TEXTURE_SIZE );
 		clouds.shapeDetailTexture = volume( `${ base }shape_detail.bin`, CLOUD_SHAPE_DETAIL_TEXTURE_SIZE );
-		// blue noise that hides the ray-marching steps; fetched from the library's own host
-		clouds.stbnTexture = new STBNLoader().load( DEFAULT_STBN_URL );
+		// blue noise that hides the ray-marching steps (the library's own, served with the site)
+		clouds.stbnTexture = new STBNLoader().load( `${ base }stbn.bin` );
 
 		// the overlay texture is replaced when the cloud buffers are resized: keep the sky pointed at it
 		clouds.events.addEventListener( 'change', () => {

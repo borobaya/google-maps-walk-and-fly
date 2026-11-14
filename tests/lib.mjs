@@ -1,4 +1,5 @@
-// What the test suites share: finding Chrome, starting it, and reporting checks.
+// What the test suites share: finding Chrome, starting it, and reporting checks. The touch and
+// desktop suites drive Chrome with puppeteer; the key-less one uses Playwright, for WebKit too.
 import puppeteer from 'puppeteer-core';
 
 export const CHROME = process.env.CHROME ?? {
@@ -18,11 +19,13 @@ export const SHORT = { ...LANDSCAPE, height: 292 }; // what Safari leaves on an 
 
 export const sleep = ms => new Promise( r => setTimeout( r, ms ) );
 
+// CI machines run as root, where Chrome's sandbox cannot start
+export const CHROME_ARGS = [ ...GPU, ...( process.env.CI ? [ '--no-sandbox' ] : [] ) ];
+
 export const launch = ( viewport, args = [] ) => puppeteer.launch( {
 	executablePath: CHROME,
 	headless: true,
-	// CI machines run as root, where Chrome's sandbox cannot start
-	args: [ ...GPU, ...( process.env.CI ? [ '--no-sandbox' ] : [] ), ...args ],
+	args: [ ...CHROME_ARGS, ...args ],
 	defaultViewport: viewport,
 } );
 
@@ -42,13 +45,15 @@ for ( const event of [ 'uncaughtException', 'unhandledRejection' ] ) {
 
 }
 
-let failed = 0;
+let failed = 0, scope = '';
+/** Names the browser the checks that follow run in, for GitHub's annotations. */
+export const within = name => { scope = name; console.log( `\n--- in ${ name } ---` ); };
 export const check = ( name, ok, detail ) => {
 
 	if ( ! ok ) failed ++;
 	const shown = detail === undefined ? '' : JSON.stringify( detail );
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } ${ name }${ shown ? `  ${ shown }` : '' }` );
-	if ( ! ok ) annotate( name, shown || 'failed' );
+	if ( ! ok ) annotate( scope ? `${ scope } - ${ name }` : name, shown || 'failed' );
 
 };
 /** Prints the total and exits, failing if any check did. */

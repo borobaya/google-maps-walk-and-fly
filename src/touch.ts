@@ -16,19 +16,22 @@ export function addTouchControls( root: HTMLElement, player: Player ) {
 	const pad = document.createElement( 'div' );
 	pad.className = 'pad';
 
-	const button = ( cls: string, html: string, label: string ) => {
+	/** @param label the name a screen reader gives it; null when the button's own text says it */
+	const button = ( cls: string, html: string, label: string | null, hint: string | null = null ) => {
 
 		const b = document.createElement( 'button' );
 		b.type = 'button';
 		b.className = cls;
 		b.innerHTML = html;
-		b.setAttribute( 'aria-label', label );
+		if ( label ) b.setAttribute( 'aria-label', label );
+		if ( hint ) b.title = hint;
 		pad.append( b );
 		return b;
 
 	};
 
-	const mode = button( 'mode', '<span class="walk-only">Fly</span><span class="fly-only">Walk</span>', 'Switch between walking and flying' );
+	// named by what it shows ("Fly" or "Walk"), so voice control can use the word on screen
+	const mode = button( 'mode', '<span class="walk-only">Fly</span><span class="fly-only">Walk</span>', null, 'Switch between walking and flying' );
 	const up = button( 'up', '▲', 'Jump, or climb when flying' );
 	const down = button( 'down fly-only', '▼', 'Descend' );
 
