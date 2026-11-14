@@ -137,10 +137,10 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 
 - **Street level is rough.** Google builds this mesh from aerial photos. It looks great from the air; up close, buildings are soft and trees are solid lumps.
 - **Coverage is Google's.** Most large cities are in 3D. Elsewhere you get flat satellite-textured terrain, and a few sensitive sites are deliberately flattened.
-- **Phones run a lighter version.** There are no clouds, the picture is drawn at a lower resolution (and lowered further if frames stay slow), and less of the world is kept in memory. How smooth it is depends on the phone.
+- **Phones run a lighter version.** There are no clouds and less of the world is kept in memory. The picture is drawn at the screen's full resolution, as on a computer, and lowered automatically if frames stay slow. How smooth it is depends on the phone.
 - **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
 - **Apple's Lockdown Mode blocks it.** Lockdown Mode switches off 3D graphics in Safari on a Mac and in every browser on iPhone and iPad. The page says so and explains how to exclude just this website in Safari. Chrome and other browsers on iPhone and iPad cannot do that, so use Safari there.
-- **Lighting is fixed.** One mid-afternoon sun everywhere; there is no night.
+- **The light is the photos'.** Buildings look as they did when Google photographed them, shadows and all, so the time of day varies from place to place. The sky is always daytime; there is no night.
 
 ## Putting it online
 
@@ -152,7 +152,7 @@ Built without a key (as the workflow does), the site asks each visitor for their
 
 - `src/world.ts` streams Google Photorealistic 3D Tiles with [3d-tiles-renderer](https://github.com/NASA-AMMOS/3DTilesRendererJS) and keeps your surroundings at the scene origin with +Y up, re-anchoring every kilometre so it works anywhere on Earth.
 - `src/player.ts` is the walk and fly controller. Collision is done by casting rays against the loaded tile meshes.
-- `src/atmosphere.ts` adds the sky, sunlight, haze and volumetric clouds with [three-geospatial](https://github.com/takram-design-engineering/three-geospatial).
+- `src/atmosphere.ts` adds the sky and the volumetric clouds with [three-geospatial](https://github.com/takram-design-engineering/three-geospatial). The photos themselves are neither lit again nor hazed: `src/photo.ts` passes each one through in a form the last step turns back into its own colours, so they reach the screen exactly as Google supplied them.
 - `src/hud.ts` and `src/main.ts` hold the interface and the render loop.
 - `vite.config.ts` writes the page's content security policy: the hosts it may load from and talk to. A new host has to be added there, deliberately.
 

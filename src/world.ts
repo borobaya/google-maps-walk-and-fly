@@ -1,5 +1,6 @@
 import { Matrix4, Raycaster, Vector3, type Camera, type Intersection, type WebGLRenderer } from 'three';
 import { DRACO_GLTF_CONFIG, DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { asPhoto } from './photo';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { quality } from './quality';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins';
@@ -65,12 +66,14 @@ export class World {
 		tiles.lruCache.maxBytesSize = quality.cacheMax;
 		tiles.parseQueue.maxJobs = quality.parseJobs;
 
-		// sharpen textures seen at shallow angles (the ground when walking)
+		// sharpen textures seen at shallow angles (the ground when walking), and mark every tile
+		// as a photograph, to reach the screen in its own colours (photo.ts)
 		const anisotropy = renderer.capabilities.getMaxAnisotropy();
 		tiles.addEventListener( 'load-model', ( e: any ) => {
 
 			e.scene.traverse( ( o: any ) => {
 
+				if ( o.material ) for ( const m of [ o.material ].flat() ) asPhoto( m );
 				const map = o.material?.map;
 				if ( map ) {
 

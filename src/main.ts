@@ -92,7 +92,11 @@ function start( key: string, typed: boolean ) {
 
 	}
 
-	let pixelRatio = Math.min( window.devicePixelRatio, quality.pixelRatio );
+	// The screen's full resolution. A phone that reset its graphics at it (memory ran low) starts
+	// the reload at 2x, for the rest of this visit.
+	const LOST_STORE = 'walk-and-fly-lost-graphics';
+	const lostBefore = ( () => { try { return sessionStorage.getItem( LOST_STORE ) !== null; } catch { return false; } } )();
+	let pixelRatio = Math.min( window.devicePixelRatio, quality.pixelRatio, quality.phone && lostBefore ? 2 : Infinity );
 	renderer.setPixelRatio( pixelRatio );
 
 	const scene = new Scene();
@@ -116,6 +120,7 @@ function start( key: string, typed: boolean ) {
 	canvas.addEventListener( 'webglcontextlost', e => {
 
 		e.preventDefault();
+		try { sessionStorage.setItem( LOST_STORE, '1' ); } catch { /* storage blocked: the reload starts at full resolution again */ }
 		hud.lost();
 
 	} );
@@ -251,7 +256,9 @@ function start( key: string, typed: boolean ) {
 	// A step taken while loading may still have been the loading's fault, so once things are calm
 	// and there are frames to spare it is tried back; twice at most, so the picture cannot see-saw.
 	let slowFor = 0, fastFor = 0, smoothed = 1 / 60, settledAt = Infinity;
-	let owed = 0, retries = 2; // steps taken while tiles were loading, and how many may still be undone
+	// steps taken while tiles were loading (their sizes, to undo them exactly), and how many may still be undone
+	const owedSteps: number[] = [];
+	let retries = 2;
 	const setPixelRatio = ( to: number ) => {
 
 		pixelRatio = to;
@@ -263,26 +270,30 @@ function start( key: string, typed: boolean ) {
 
 		if ( player.settling ) return void ( settledAt = Infinity );
 		if ( settledAt === Infinity ) settledAt = time;
-		if ( time - settledAt < 8000 ) return void ( slowFor = fastFor = 0, smoothed = 1 / 60 );
-		smoothed += ( dt - smoothed ) * 0.05;
+		// Above 2x (a phone's full resolution) it is judged sooner and faster: a phone that cannot
+		// keep up finds its level within a few seconds of arriving, not a quarter of a minute.
+		const sharp = pixelRatio > 2;
+		if ( time - settledAt < ( sharp ? 3000 : 8000 ) ) return void ( slowFor = fastFor = 0, smoothed = 1 / 60 );
+		smoothed += ( dt - smoothed ) * ( sharp ? 0.1 : 0.05 );
 		const loading = world.tiles.loadProgress < 1;
 
 		slowFor = smoothed > 1 / 30 ? slowFor + dt : 0;
-		if ( slowFor >= ( loading ? 8 : 4 ) && pixelRatio > quality.minPixelRatio ) {
+		if ( slowFor >= ( sharp ? 2 : loading ? 8 : 4 ) && pixelRatio > quality.minPixelRatio ) {
 
 			slowFor = 0;
-			if ( loading ) owed ++;
-			return setPixelRatio( Math.max( quality.minPixelRatio, pixelRatio - 0.25 ) );
+			// and in bigger steps
+			const to = Math.max( quality.minPixelRatio, pixelRatio - ( pixelRatio > 2 ? 0.5 : 0.25 ) );
+			if ( loading ) owedSteps.push( pixelRatio - to );
+			return setPixelRatio( to );
 
 		}
 
-		fastFor = owed > 0 && retries > 0 && ! loading && smoothed < 1 / 50 ? fastFor + dt : 0;
+		fastFor = owedSteps.length > 0 && retries > 0 && ! loading && smoothed < 1 / 50 ? fastFor + dt : 0;
 		if ( fastFor >= 15 ) {
 
 			fastFor = 0;
-			owed --;
 			retries --;
-			setPixelRatio( pixelRatio + 0.25 );
+			setPixelRatio( pixelRatio + owedSteps.pop()! );
 
 		}
 
@@ -302,7 +313,12 @@ function start( key: string, typed: boolean ) {
 		const reach = player.settling ? Infinity : player.clearance * 0.5;
 		camera.near = MathUtils.clamp( Math.min( Math.max( h * 0.05, 0.3 ), reach ), 0.1, 50 );
 		camera.far = MathUtils.clamp( Math.sqrt( 2 * EARTH_RADIUS * h ) * 1.5 + 5000, 8000, 1e6 );
-		camera.fov = player.fov;
+		// The player's angle is for a landscape screen. Upright, applying it to the height alone would
+		// leave a slit a third as wide, so it is spread over the screen's area instead: the same
+		// amount of the world, a little narrower across and taller than a landscape view.
+		const aspect = camera.aspect;
+		camera.fov = aspect >= 1 ? player.fov
+			: 2 * Math.atan( Math.tan( player.fov * Math.PI / 360 ) / Math.sqrt( aspect ) ) * 180 / Math.PI;
 		camera.updateProjectionMatrix();
 
 		atmosphere.update( world.tiles.group.matrixWorldInverse );
@@ -328,7 +344,7 @@ function start( key: string, typed: boolean ) {
 	} );
 
 	// handy when debugging from the console
-	const resolution = { get pixelRatio() { return pixelRatio; }, get owed() { return owed; } };
+	const resolution = { get pixelRatio() { return pixelRatio; }, get owed() { return owedSteps.length; } };
 	Object.assign( window, { player, world, atmosphere, capture, resolution } );
 
 }

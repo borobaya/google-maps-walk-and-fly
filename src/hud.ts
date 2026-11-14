@@ -204,6 +204,9 @@ export class Hud {
 	private credit = el( 'span' );
 	private banner = el( 'div', 'banner' );
 	private help = el( 'div', 'panel help' );
+	private places: HTMLElement | null = null;
+	/** The mouse is over (or just beside) the Places box, so it should show. */
+	private nearPlaces = false;
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
 	private compass = el( 'div', 'compass' );
 	private note = el( 'div', 'note' );
@@ -221,14 +224,26 @@ export class Hud {
 		// status
 		const status = this.status;
 		status.append( this.mode, this.stats );
-		// While you are clicking, touching or typing, the status panel fades away to leave the view
-		// clear. It comes back once nothing has been touched for QUIET_AFTER.
+		// While you are clicking, touching or typing, the status panel and the controls panel fade
+		// away to leave the view clear. They come back once nothing has been touched for QUIET_AFTER.
 		const touched = () => { this.lastInput = performance.now(); };
 		for ( const type of [ 'pointerdown', 'keydown', 'wheel' ] ) window.addEventListener( type, touched, { capture: true, passive: true } );
 		window.addEventListener( 'pointermove', e => { if ( e.buttons || e.pointerType === 'touch' ) touched(); }, { capture: true, passive: true } );
 
 		// go-to
 		const go = el( 'form', 'panel goto' );
+		this.places = go;
+		// moving the mouse to where the Places box sits brings it back, faded or not
+		// (only measured while it matters: when the box is faded, or to notice the mouse leaving it)
+		window.addEventListener( 'pointermove', e => {
+
+			if ( e.pointerType !== 'mouse' || ( ! this.nearPlaces && ! go.classList.contains( 'quiet' ) ) ) return;
+			const r = go.getBoundingClientRect(), m = 24;
+			this.nearPlaces = e.clientX > r.left - m && e.clientX < r.right + m && e.clientY > r.top - m && e.clientY < r.bottom + m;
+
+		}, { passive: true } );
+		// the mouse leaving the window from beside the box is no longer on its way to it
+		document.documentElement.addEventListener( 'mouseleave', () => { this.nearPlaces = false; } );
 		const input = el( 'input' );
 		input.placeholder = 'Place or lat, lng';
 		input.setAttribute( 'aria-label', 'Place name or latitude, longitude' );
@@ -492,7 +507,14 @@ export class Hud {
 		// holding a key, button or thumb counts as still interacting, however long it is held
 		if ( this.player.steering ) this.lastInput = performance.now();
 		// while a new place loads, say so whatever you are doing
-		this.status.classList.toggle( 'quiet', ! this.player.settling && performance.now() - this.lastInput < QUIET_AFTER );
+		const quiet = ! this.player.settling && performance.now() - this.lastInput < QUIET_AFTER;
+		this.status.classList.toggle( 'quiet', quiet );
+		this.help.classList.toggle( 'quiet', quiet );
+		// the Places box too, unless it is in use, opened by hand, or the mouse is on its way to it;
+		// never while the screen is touched, as a finger cannot hover to bring it back
+		const box = this.places;
+		if ( box ) box.classList.toggle( 'quiet', quiet && ! this.nearPlaces && ! document.body.classList.contains( 'touch' )
+			&& ! box.contains( document.activeElement ) && ! box.classList.contains( 'open' ) );
 
 		const p = this.player;
 		document.body.dataset.mode = p.mode;

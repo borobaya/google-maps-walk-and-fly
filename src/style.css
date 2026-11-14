@@ -30,7 +30,7 @@ html, body {
 	width: 100%;
 	height: 100%;
 	display: block;
-	cursor: grab;
+	cursor: default;
 	/* every touch on the scene is ours: no scrolling, pinch-zoom or double-tap zoom */
 	touch-action: none;
 	user-select: none;
@@ -60,8 +60,8 @@ html, body {
 }
 
 .status { top: calc(12px + var(--st)); left: calc(12px + var(--sl)); pointer-events: none; transition: opacity 0.4s; }
-/* faded while you click, touch or type; back after a quiet spell */
-.status.quiet { opacity: 0; transition-duration: 0.25s; }
+/* faded while you click, touch or type; back after a quiet spell (the controls panel too) */
+.status.quiet, .help.quiet { opacity: 0; transition-duration: 0.25s; }
 .status .mode {
 	display: block;
 	font-weight: 650;
@@ -79,7 +79,9 @@ html, body {
 .stats:empty { display: none; }
 .stats i { font-style: normal; }
 
-.goto { top: calc(12px + var(--st)); right: calc(12px + var(--sr)); display: flex; flex-wrap: wrap; gap: 6px; max-width: 390px; }
+.goto { top: calc(12px + var(--st)); right: calc(12px + var(--sr)); display: flex; flex-wrap: wrap; gap: 6px; max-width: 390px; transition: opacity 0.4s; }
+/* faded like the status panel; while faded, clicks go through it to the view */
+.goto.quiet { opacity: 0; pointer-events: none; transition-duration: 0.25s; }
 .goto button:disabled { opacity: 0.5; cursor: progress; }
 .note { flex-basis: 100%; color: #ffb4ab; font-size: 12px; line-height: 1.4; }
 .note:empty { display: none; }
@@ -144,7 +146,7 @@ html, body {
 /* every button shows where the keyboard is */
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; gap: 6px; color: var(--muted); pointer-events: none; }
+.help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; gap: 6px; color: var(--muted); pointer-events: none; transition: opacity 0.4s; }
 .help.hidden { display: none; }
 body[data-mode='walk'] .fly-only,
 body[data-mode='fly'] .walk-only { display: none; }
@@ -162,7 +164,8 @@ kbd {
 	margin-right: 2px;
 }
 
-body.looking #view { cursor: grabbing; }
+/* out of the picture while you drag to look around; back where you let go */
+body.looking #view { cursor: none; }
 
 .hint {
 	left: 50%;

@@ -164,6 +164,10 @@ const run = ( await state() ).speed;
 await up( 1 );
 await sleep( 800 );
 check( 'walking pace follows the drag; a long drag runs', stroll > 0.5 && stroll < walk && walk < 4.6 && run > 6, { stroll, walk, run } );
+// upright, the view is spread over the screen rather than fixed to its height: about 50° across on foot
+await sleep( 2500 );
+const upright = await page.evaluate( () => { const c = world.tiles.cameras[ 0 ]; return { tall: + c.fov.toFixed( 0 ), across: + ( 2 * Math.atan( Math.tan( c.fov * Math.PI / 360 ) * c.aspect ) * 180 / Math.PI ).toFixed( 0 ) }; } );
+check( 'upright on foot, the view is about 50° across, not a narrow slit', upright.across >= 46 && upright.across <= 54 && upright.tall > 80 && upright.tall < 100, upright );
 
 const upButton = await centre( '.pad .up' );
 await down( 3, upButton.x, upButton.y );
@@ -416,6 +420,11 @@ await sleep( 500 );
 const lost = await page.evaluate( () => { const b = document.querySelector( '.banner' ); return { show: b.classList.contains( 'show' ), text: b.textContent, button: b.querySelector( 'button' )?.textContent }; } );
 check( 'losing the graphics says so and offers a reload', lost.show && lost.button === 'Reload', lost );
 check( 'no errors on the page', errors.length === 0, errors );
+// the reload after that starts at 2x, not the screen's full 3x
+await page.reload( { waitUntil: 'domcontentloaded' } );
+await page.waitForFunction( () => window.resolution, { timeout: 60000 } );
+const afterLoss = await page.evaluate( () => resolution.pixelRatio );
+check( 'after the graphics were reset, the reload draws at 2x', afterLoss === 2, afterLoss );
 
 // --- a laptop with a touchscreen: buttons appear only once the screen is touched
 {
@@ -438,6 +447,9 @@ check( 'no errors on the page', errors.length === 0, errors );
 	await t.touchEnd();
 	const l1 = await see();
 	check( 'laptop: a touch looks around and brings the buttons', l1.pad && ! l1.help && l1.yaw < l0.yaw - 0.1 && l1.pitch > l0.pitch + 0.05, l1 );
+	// a finger cannot hover to bring the Places box back, so touching never fades it
+	const touchedBox = await laptop.$eval( '.goto', e => ( { quiet: e.classList.contains( 'quiet' ), shown: getComputedStyle( e ).opacity } ) );
+	check( 'laptop: touching the screen leaves the Places box in reach', ! touchedBox.quiet && touchedBox.shown === '1', touchedBox );
 	await laptop.mouse.move( 640, 360 );
 	await laptop.mouse.down();
 	await laptop.mouse.move( 700, 360, { steps: 4 } );

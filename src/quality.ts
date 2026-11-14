@@ -5,7 +5,7 @@
  */
 export interface Quality {
 	phone: boolean;
-	/** Highest rendering resolution, as a multiple of CSS pixels. */
+	/** Highest rendering resolution, as a multiple of CSS pixels: the screen's own (as Google Maps draws), lowered only if frames are slow. */
 	pixelRatio: number;
 	/** How far the resolution may be lowered if frames stay slow. */
 	minPixelRatio: number;
@@ -31,7 +31,7 @@ const phone = forced ? forced === 'phone' : matchMedia( '(pointer: coarse)' ).ma
 
 export const quality: Quality = phone ? {
 	phone: true,
-	pixelRatio: 1.5,
+	pixelRatio: Infinity,
 	minPixelRatio: 1,
 	clouds: false,
 	cacheMin: 150 * MB,
@@ -41,7 +41,7 @@ export const quality: Quality = phone ? {
 	flyError: 16,
 } : {
 	phone: false,
-	pixelRatio: 2,
+	pixelRatio: Infinity,
 	minPixelRatio: 2,
 	clouds: true,
 	cacheMin: 512 * MB,

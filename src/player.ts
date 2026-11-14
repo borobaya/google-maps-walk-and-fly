@@ -34,7 +34,33 @@ const TURN_DEAD = 14; // one-thumb steering: sideways pixels ignored, so going s
 const ONE_THUMB_PITCH = - 0.25; // one-thumb flying looks slightly down at the world, radians
 const KEY_TURN_RATE = 2.0; // rad/s when turning with the arrow keys
 const KEY_PITCH_RATE = 1.2; // rad/s when tilting the view with W / S
+/**
+ * Field of view, degrees from top to bottom of a landscape screen (see main.ts for an upright
+ * one). On foot it is wide, as in most first-person games; in the air it is narrower, nearer
+ * Google Maps' own 3D view (35), so the city looks calm and undistorted rather than fish-eyed.
+ */
 const BASE_FOV = 70;
+const FLY_FOV = 50;
+/**
+ * The flying view at a given height above the ground: the walking view while skimming the
+ * street, narrowing to FLY_FOV as you climb. The change is spread evenly over the doublings of
+ * height (5, 10, 20 … 200 m), so it is as gradual near the ground as high up.
+ */
+const LOW = 5, HIGH = 200;
+/**
+ * How long the view takes to settle at a new angle, seconds. It moves like a critically damped
+ * spring: it sets off gently, glides, and arrives gently, never overshooting, so neither the
+ * angle nor the speed at which it changes ever jumps, whatever the reason for the change
+ * (taking off or landing, speeding up or stopping, arriving somewhere).
+ */
+const FOV_EASE = 0.6;
+
+function flyFov( height: number ) {
+
+	const t = MathUtils.clamp( Math.log( Math.max( height, 0.01 ) / LOW ) / Math.log( HIGH / LOW ), 0, 1 );
+	return MathUtils.lerp( BASE_FOV, FLY_FOV, t * t * ( 3 - 2 * t ) );
+
+}
 /** The device's "reduce motion" setting: no banking, no widening with speed, no bounce in your step. */
 const LESS_MOTION = matchMedia( '(prefers-reduced-motion: reduce)' );
 const MAX_DROP = 150; // a ground reading this far below the last one is not believed straight away
@@ -92,6 +118,8 @@ export class Player {
 	private suspectFrames = 0;
 	private speedHeight = SPAWN_HEIGHT;
 	private fovTarget = BASE_FOV;
+	/** How fast the view angle is changing, degrees per second (see FOV_EASE). */
+	private fovRate = 0;
 	private bob = 0;
 	private liftTime = 0;
 	private liftSign = 0;
@@ -574,7 +602,7 @@ export class Player {
 		}
 
 		// the view widens as you pick up speed
-		this.fovTarget = BASE_FOV + 16 * MathUtils.clamp( velocity.length() / ( base * this.flyScale * 3 ), 0, 1 );
+		this.fovTarget = flyFov( this.heightAboveGround ) + 12 * MathUtils.clamp( velocity.length() / ( base * this.flyScale * 3 ), 0, 1 );
 
 	}
 
@@ -620,7 +648,12 @@ export class Player {
 			? MathUtils.clamp( this.yawRate * 0.22, - 0.6, 0.6 ) - a.x * 0.1
 			: 0;
 		this.roll += ( bank - this.roll ) * ( 1 - Math.exp( - dt * 4 ) );
-		this.fov += ( ( this.settling || calm ? BASE_FOV : this.fovTarget ) - this.fov ) * ( 1 - Math.exp( - dt * 3 ) );
+		// the view without any widening for speed (arriving somewhere you start high up, unless you
+		// are coming back to where you left off on foot)
+		const still = this.mode !== 'fly' ? BASE_FOV
+			: this.settling ? ( this.resume?.mode === 'walk' ? BASE_FOV : FLY_FOV )
+				: flyFov( this.heightAboveGround );
+		this.ease( this.settling || calm ? still : this.fovTarget, dt );
 
 		// a slight bounce in your step
 		const bounce = this.mode === 'walk' && this.grounded && ! calm ? Math.sin( this.bob ) * 0.03 : 0;
@@ -817,6 +850,19 @@ export class Player {
 			this.flyScale = MathUtils.clamp( this.flyScale * Math.exp( - e.deltaY * 0.001 ), 0.2, 8 );
 
 		}, { passive: false } );
+
+	}
+
+	/** Moves the view angle towards `target` without any jump in it or in its rate (see FOV_EASE). */
+	private ease( target: number, dt: number ) {
+
+		// the smooth-damp step of Game Programming Gems 4, 1.10: a critically damped spring
+		const w = 2 / FOV_EASE, x = w * dt;
+		const decay = 1 / ( 1 + x + 0.48 * x * x + 0.235 * x * x * x );
+		const offset = this.fov - target;
+		const pull = ( this.fovRate + w * offset ) * dt;
+		this.fovRate = ( this.fovRate - w * pull ) * decay;
+		this.fov = target + ( offset + pull ) * decay;
 
 	}
 

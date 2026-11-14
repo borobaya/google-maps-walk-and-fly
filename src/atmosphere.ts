@@ -2,7 +2,7 @@ import {
 	Data3DTexture, HalfFloatType, LinearFilter, LinearMipMapLinearFilter, Matrix4, NoColorSpace, RedFormat, RepeatWrapping,
 	TextureLoader, Vector3, type Camera, type Scene, type WebGLRenderer,
 } from 'three';
-import { EffectComposer, EffectPass, RenderPass, SMAAEffect, ToneMappingEffect, ToneMappingMode } from 'postprocessing';
+import { EffectComposer, EffectPass, RenderPass, SMAAEffect } from 'postprocessing';
 import {
 	AerialPerspectiveEffect, PrecomputedTexturesGenerator,
 } from '@takram/three-atmosphere';
@@ -10,6 +10,7 @@ import {
 import type { CloudsEffect } from '@takram/three-clouds';
 type CloudsModule = typeof import( '@takram/three-clouds' );
 import { DataTextureLoader, STBNLoader, parseUint8Array } from '@takram/three-geospatial';
+import { ScreenCurveEffect } from './photo';
 
 // A fixed mid-afternoon sun: 50 degrees up in the south-west (scene axes: +Y up, +Z north, -X east).
 const SUN_ELEVATION = 50 * Math.PI / 180;
@@ -36,19 +37,21 @@ class SkyPass extends EffectPass {
 }
 
 /**
- * Physically based sky, sunlight and haze (three-geospatial), applied as a
- * post-process over the tiles. The tiles are treated as surface colour and lit
- * by a sun and sky that stay the same everywhere.
+ * Physically based sky and clouds (three-geospatial), applied as a post-process over the tiles.
+ * The tiles are photographs and are neither lit again nor hazed: they come in as the light that
+ * shows their own colours (see photo.ts), and only clouds passing in front change how they look.
  */
 export class Atmosphere {
 
 	private composer: EffectComposer;
+	/** The sky behind everything (and, with clouds, the clouds in front); it leaves the photos as they are. */
 	private aerial: AerialPerspectiveEffect;
 	/** Exists only while clouds are switched on, so a phone never pays for them unasked. */
 	private clouds: CloudsEffect | null = null;
 	private cloudsOn = false;
 	private sun = new Vector3();
-	private toneMapping = new ToneMappingEffect( { mode: ToneMappingMode.AGX } );
+	/** Light to screen colour: the curve the photos are prepared for (photo.ts). */
+	private toneMapping = new ScreenCurveEffect();
 	/** The pass holding the sky (and the clouds, when on); rebuilt when clouds are toggled. */
 	private skyPass: SkyPass | null = null;
 	private textures: object;
@@ -62,19 +65,15 @@ export class Atmosphere {
 
 		this.camera = camera;
 
-		// the sky is far brighter than a screen can show; expose for daylight
-		renderer.toneMappingExposure = 8;
-
+		// The sky only: the scene is neither lit nor hazed, its colour is taken as the light it gives
+		// off (the photos' own), so it reaches the screen as it is at every distance.
 		this.aerial = new AerialPerspectiveEffect( camera, {
 			sky: true,
 			moon: false,
-			sunLight: true,
-			skyLight: true,
-			// No normals are supplied, so every surface is lit as if it faced straight up. Google's
-			// textures already carry the real shading; deriving normals from depth instead turned
-			// the undersides of bridges and overhangs black.
-			// Google's textures already contain baked light and shadow; soften the contrast
-			albedoScale: 2 / 3,
+			sunLight: false,
+			skyLight: false,
+			transmittance: false,
+			inscatter: false,
 		} );
 
 		// radiance needs a floating-point buffer

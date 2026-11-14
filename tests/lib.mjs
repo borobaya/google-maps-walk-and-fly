@@ -72,7 +72,9 @@ export const layout = page => page.evaluate( () => {
 	for ( const name of names ) {
 
 		const node = document.querySelector( name ), style = getComputedStyle( node ), r = node.getBoundingClientRect();
-		if ( style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || r.width === 0 ) continue;
+		// a panel faded for a while (`quiet`) still has its place on the screen: count it
+		const faded = style.opacity === '0' && ! node.classList.contains( 'quiet' );
+		if ( style.display === 'none' || style.visibility === 'hidden' || faded || r.width === 0 ) continue;
 		boxes.push( { name, r } );
 
 	}

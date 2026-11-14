@@ -44,6 +44,37 @@ await loaded( page );
 const desk = await page.evaluate( () => ( { touch: document.body.classList.contains( 'touch' ), clouds: atmosphere.cloudsEnabled } ) );
 check( 'laptop: full quality with clouds, the help panel and no touch buttons', ! desk.touch && desk.clouds && await shown( '.help' ) && ! await shown( '.pad' ), desk );
 
+// the status and controls panels fade together while you use the keys, and return together
+{
+
+	const panels = () => page.evaluate( () => [ '.status', '.help', '.goto' ].map( s => document.querySelector( s ).classList.contains( 'quiet' ) ) );
+	await page.mouse.click( 640, 400 );
+	await page.keyboard.press( 'KeyW' );
+	await sleep( 300 );
+	const busy = await panels();
+	await sleep( 10500 );
+	const rested = await panels();
+	check( 'the status, controls and Places panels fade together, and return together after 10 quiet seconds', busy.every( Boolean ) && rested.every( q => ! q ), { busy, rested } );
+
+	// the Places box comes back as soon as the mouse goes to it, and stays while you type in it
+	const box = () => page.evaluate( () => ( { quiet: document.querySelector( '.goto' ).classList.contains( 'quiet' ), see: getComputedStyle( document.querySelector( '.goto' ) ).pointerEvents } ) );
+	await page.keyboard.press( 'KeyW' );
+	await sleep( 300 );
+	const faded = await box();
+	const r = await page.$eval( '.goto', e => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; } );
+	await page.mouse.move( r.x, r.y, { steps: 3 } );
+	await sleep( 300 );
+	const near = await box();
+	await page.click( '.goto input' );
+	await page.keyboard.type( 'Lon' );
+	await page.mouse.move( 640, 600, { steps: 3 } );
+	await sleep( 300 );
+	const typing = await box();
+	check( 'the Places box lets clicks through while faded, returns when the mouse goes to it, and stays while you type', faded.quiet && faded.see === 'none' && ! near.quiet && ! typing.quiet, { faded, near, typing } );
+	await page.$eval( '.goto input', e => { e.value = ''; e.blur(); } );
+
+}
+
 // --- every window size: nothing overlaps, nothing falls off the edge, box open or shut ---
 {
 
@@ -124,10 +155,16 @@ await sleep( 800 );
 {
 
 	const before = await state();
+	const cursor = () => page.$eval( '#view', e => getComputedStyle( e ).cursor );
 	await page.mouse.move( 640, 400 );
+	const resting = await cursor();
 	await page.mouse.down();
 	await page.mouse.move( 720, 360, { steps: 5 } );
+	await sleep( 100 ); // the interface catches up on the next frame
+	const dragging = await cursor();
 	await page.mouse.up();
+	await sleep( 100 );
+	check( 'the pointer is the usual arrow, and hides while you drag to look', resting === 'default' && dragging === 'none' && await cursor() === 'default', { resting, dragging } );
 	const after = await state();
 	check( 'dragging with the mouse looks around', after.yaw < before.yaw - 0.1 && after.pitch > before.pitch + 0.02, [ + ( after.yaw - before.yaw ).toFixed( 2 ), + ( after.pitch - before.pitch ).toFixed( 2 ) ] );
 
@@ -145,6 +182,33 @@ await sleep( 800 );
 }
 
 // --- on foot ----------------------------------------------------------------------
+// coming back on foot (a reload while walking), the view is the walking one from the first frame
+{
+
+	await page.evaluate( () => player.mode === 'walk' || player.toggleMode() );
+	await page.waitForFunction( () => player.mode === 'walk' && player.heightAboveGround < 0.05, { timeout: 60000 } ).catch( () => {} );
+	await sleep( 2500 ); // saved every two seconds
+	await page.reload( { waitUntil: 'domcontentloaded' } );
+	await page.waitForFunction( () => window.player, { timeout: 60000 } );
+	const narrowest = await page.evaluate( () => new Promise( resolve => {
+
+		let low = Infinity;
+		const tick = () => {
+
+			low = Math.min( low, world.tiles.cameras[ 0 ].fov );
+			if ( player.settling ) requestAnimationFrame( tick ); else setTimeout( () => resolve( { low: + low.toFixed( 1 ), mode: player.mode } ), 1500 );
+
+		};
+		tick();
+
+	} ) );
+	check( 'reloading on foot keeps the walking view throughout, with no zoom', narrowest.mode === 'walk' && narrowest.low > 69, narrowest );
+	await loaded( page );
+	await page.mouse.click( 640, 400 );
+
+}
+
+
 // from the same open spot every time, facing north across the square
 await page.evaluate( () => { player.teleport( 51.508, - 0.1281 ); player.yaw = Math.PI; } );
 await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
@@ -295,12 +359,23 @@ await sleep( 300 );
 
 	const turn = async () => {
 
+		// level, 300 m up, where height does not change the view: only speed may
+		await page.evaluate( () => {
+
+			const here = world.toLatLng( player.position );
+			player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + 300, heading: player.heading, pitch: 0, mode: 'fly' } );
+
+		} );
+		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+		await sleep( 2500 );
 		await page.mouse.click( 400, 400 );
 		await page.keyboard.down( 'ShiftLeft' ); await page.keyboard.down( 'ArrowUp' ); await page.keyboard.down( 'ArrowLeft' );
 		await sleep( 1500 );
 		const s = await page.evaluate( () => ( { mode: player.mode, roll: + player.camera.rotation.z.toFixed( 3 ), fov: + player.fov.toFixed( 1 ) } ) );
 		await page.keyboard.up( 'ArrowLeft' ); await page.keyboard.up( 'ArrowUp' ); await page.keyboard.up( 'ShiftLeft' );
-		await sleep( 1500 );
+		await sleep( 2500 );
+		// how much wider the view was at speed than once stopped, at the same spot
+		s.widened = + ( s.fov - await page.evaluate( () => player.fov ) ).toFixed( 1 );
 		return s;
 
 	};
@@ -309,13 +384,161 @@ await sleep( 300 );
 	await page.emulateMediaFeatures( [ { name: 'prefers-reduced-motion', value: 'reduce' } ] );
 	const calm = await turn();
 	await page.emulateMediaFeatures( [] );
-	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.fov > 75 && Math.abs( calm.roll ) < 0.01 && calm.fov < 70.5, { usual, calm } );
+	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.widened > 4 && Math.abs( calm.roll ) < 0.01 && Math.abs( calm.widened ) < 1, { usual, calm } );
 
 }
 
 const sky = await page.evaluate( () => ( { clouds: atmosphere.cloudsEnabled, noise: !! atmosphere.clouds?.stbnTexture?.image } ) );
 check( 'the clouds\' noise texture comes from the site itself', sky.clouds && sky.noise, sky );
 check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => GOOGLE.includes( h ) ), [ ...hosts ] );
+// the view angle never jumps, nor does the speed at which it changes: through taking off,
+// boosting, stopping and landing it moves like a spring that sets off and arrives gently
+{
+
+	await page.evaluate( () => { window.__trace = []; const tick = t => { if ( ! window.__trace ) return; window.__trace.push( [ t, player.fov ] ); requestAnimationFrame( tick ); }; requestAnimationFrame( tick ); } );
+	await page.mouse.click( 400, 400 );
+	if ( ( await state() ).mode !== 'fly' ) await page.keyboard.press( 'KeyF' );
+	await page.keyboard.down( 'ShiftLeft' ); await page.keyboard.down( 'ArrowUp' ); await sleep( 2000 );
+	await page.keyboard.up( 'ArrowUp' ); await page.keyboard.up( 'ShiftLeft' ); await sleep( 1500 );
+	await page.keyboard.press( 'KeyF' ); await sleep( 3500 ); // land
+	await page.keyboard.press( 'KeyF' ); await sleep( 2000 ); // and take off again
+	const smooth = await page.evaluate( () => {
+
+		const t = window.__trace; window.__trace = null;
+		const rates = [];
+		for ( let i = 1; i < t.length; i ++ ) { const dt = ( t[ i ][ 0 ] - t[ i - 1 ][ 0 ] ) / 1000; if ( dt > 0 ) rates.push( ( t[ i ][ 1 ] - t[ i - 1 ][ 1 ] ) / dt ); }
+		const kicks = rates.slice( 1 ).map( ( r, i ) => Math.abs( r - rates[ i ] ) );
+		return { frames: t.length, range: + ( Math.max( ...t.map( x => x[ 1 ] ) ) - Math.min( ...t.map( x => x[ 1 ] ) ) ).toFixed( 1 ), fastest: + Math.max( ...rates.map( Math.abs ) ).toFixed( 1 ), biggestKick: + Math.max( ...kicks ).toFixed( 1 ) };
+
+	} );
+	check( 'the view angle changes smoothly: no jump in it, nor in how fast it changes', smooth.range > 5 && smooth.fastest < 40 && smooth.biggestKick < 10, smooth );
+
+}
+
+// flying low, the view is as wide as on foot; it narrows as you climb
+{
+
+	const at = async height => {
+
+		await page.evaluate( height => {
+
+			const here = world.toLatLng( player.position );
+			player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + height, heading: player.heading, pitch: 0, mode: 'fly' } );
+
+		}, height );
+		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+		await sleep( 2500 ); // the view eases to its new angle
+		return page.evaluate( () => ( { height: Math.round( player.heightAboveGround ), fov: + player.fov.toFixed( 1 ) } ) );
+
+	};
+	const low = await at( 8 ), high = await at( 400 );
+	check( 'flying low, the view is as wide as walking; high up, narrower', low.height < 25 && low.fov > 62 && high.fov < 51, { low, high } );
+
+}
+
+// The photos are shown as they are, neither lit again nor hazed: a card printed with every grey
+// level and four colour ramps, put in front of the camera as a tile would be, must reach the
+// screen unchanged
+{
+
+	await page.setViewport( { width: 1024, height: 512 } );
+	const expected = await page.evaluate( () => {
+
+		if ( atmosphere.cloudsEnabled ) atmosphere.toggleClouds();
+		let tile; world.tiles.group.traverse( o => { if ( ! tile && o.isMesh && o.material.map ) tile = o; } );
+		const W = 64, H = 8, data = new Uint8Array( W * H * 4 ), expect = [];
+		for ( let y = 0; y < H; y ++ ) for ( let x = 0; x < W; x ++ ) {
+
+			const t = Math.round( x / 63 * 255 );
+			const rgb = y < 4 ? Array( 3 ).fill( y * 64 + x ) : [ [ t, 255 - t, 40 ], [ 30, t, 255 - t ], [ 255 - t, 60, t ], [ t, t, 255 - t ] ][ y - 4 ];
+			data.set( [ ...rgb, 255 ], ( y * W + x ) * 4 );
+			expect.push( rgb );
+
+		}
+
+		// built from a tile's own classes and settings, so it is drawn exactly as tiles are
+		const map = new tile.material.map.constructor();
+		Object.assign( map, { image: { data, width: W, height: H }, isDataTexture: true, flipY: false, generateMipmaps: false, magFilter: 1003, minFilter: 1003, colorSpace: tile.material.map.colorSpace, needsUpdate: true } );
+		const material = tile.material.clone();
+		material.defines = { ...tile.material.defines }; // clone() leaves out the tile's photo mark
+		material.map = map;
+		const geometry = new tile.geometry.constructor();
+		const Attribute = tile.geometry.attributes.position.constructor;
+		geometry.setAttribute( 'position', new Attribute( new Float32Array( [ - 1, - 1, 0, 1, - 1, 0, 1, 1, 0, - 1, 1, 0 ] ), 3 ) );
+		geometry.setAttribute( 'uv', new Attribute( new Float32Array( [ 0, 1, 1, 1, 1, 0, 0, 0 ] ), 2 ) );
+		geometry.setIndex( [ 0, 1, 2, 0, 2, 3 ] );
+		const card = new tile.constructor( geometry, material );
+		const camera = world.tiles.cameras[ 0 ];
+		card.frustumCulled = false;
+		card.onBeforeRender = () => {
+
+			// fill the view, just beyond the camera's near limit, or as far off as asked
+			const d = window.__cardDistance ?? camera.near * 1.5, h = Math.tan( camera.fov * Math.PI / 360 ) * d;
+			card.position.copy( camera.position );
+			card.quaternion.copy( camera.quaternion );
+			card.translateZ( - d );
+			card.scale.set( h * camera.aspect, h, 1 );
+			card.updateMatrixWorld( true );
+
+		};
+		world.tiles.group.parent.add( card );
+		window.__card = card;
+		document.body.classList.add( 'bare' );
+		return expect;
+
+	} );
+	const read = async () => {
+
+	await sleep( 1500 );
+	const shot = await page.screenshot( { encoding: 'base64' } );
+	const pixels = await page.evaluate( async ( png, W, H ) => {
+
+		const image = new Image();
+		image.src = `data:image/png;base64,${ png }`;
+		await image.decode();
+		const c = document.createElement( 'canvas' );
+		c.width = image.width; c.height = image.height;
+		const g = c.getContext( '2d' );
+		g.drawImage( image, 0, 0 );
+		const got = [];
+		for ( let y = 0; y < H; y ++ ) for ( let x = 0; x < W; x ++ ) {
+
+			const d = g.getImageData( Math.floor( ( x + 0.5 ) * c.width / W ), Math.floor( ( y + 0.5 ) * c.height / H ), 1, 1 ).data;
+			got.push( [ d[ 0 ], d[ 1 ], d[ 2 ] ] );
+
+		}
+
+		return got;
+
+	}, shot, 64, 8 );
+	return Math.max( ...pixels.map( ( got, i ) => Math.max( ...got.map( ( v, k ) => Math.abs( v - expected[ i ][ k ] ) ) ) ) );
+
+	};
+	const near = await read();
+	// and 2 km away, 400 m up and looking up, so that nothing can be in between
+	await page.evaluate( async () => {
+
+		const here = world.toLatLng( player.position );
+		player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + 400, heading: player.heading, pitch: 0, mode: 'fly' } );
+		// arriving waits for the ground in view, so arrive looking level, then look up
+		while ( player.settling ) await new Promise( r => setTimeout( r, 100 ) );
+		player.pitch = 0.7;
+		window.__cardDistance = 2000;
+
+	} );
+	const far = await read();
+	check( 'photos reach the screen unchanged, close by and 2 km away: all 512 test colours, to the level', near === 0 && far === 0, { near, far } );
+	await page.evaluate( () => {
+
+		window.__card.removeFromParent();
+		delete window.__cardDistance;
+		document.body.classList.remove( 'bare' );
+
+	} );
+	await page.setViewport( { width: 800, height: 600 } );
+
+}
+
 check( 'no errors on the page', errors.length === 0, errors );
 await browser.close();
 finish();
