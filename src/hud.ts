@@ -1,5 +1,5 @@
 import type { Player } from './player';
-import { installed, upright } from './quality';
+import { installed, quality, upright } from './quality';
 import type { World } from './world';
 
 export const PLACES: Array<{ name: string, lat: number, lng: number }> = [
@@ -204,7 +204,8 @@ export class Hud {
 	private help = el( 'div', 'panel help' );
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
 	private note = el( 'div', 'note' );
-	private cloudsButton = el( 'button', 'clouds' );
+	/** A laptop's touchscreen has no K key; a phone has no clouds at all (too costly), so no button. */
+	private cloudsButton = quality.phone ? null : el( 'button', 'clouds' );
 	private nextSlow = 0;
 	private bannerTimer = 0;
 
@@ -277,10 +278,13 @@ export class Hud {
 
 		}
 
-		// touch devices have no K key
-		this.cloudsButton.type = 'button';
-		this.cloudsButton.addEventListener( 'click', () => { if ( this.onClouds ) this.showClouds( this.onClouds() ); } );
-		go.append( this.cloudsButton );
+		if ( this.cloudsButton ) {
+
+			this.cloudsButton.type = 'button';
+			this.cloudsButton.addEventListener( 'click', () => { if ( this.onClouds ) this.showClouds( this.onClouds() ); } );
+			go.append( this.cloudsButton );
+
+		}
 
 		// Fullscreen, where the browser can do it (an iPhone cannot; there, add the page to the
 		// home screen instead). Opened from the home screen it already is.
@@ -404,7 +408,7 @@ export class Hud {
 
 	showClouds( on: boolean ) {
 
-		this.cloudsButton.textContent = on ? 'Clouds: on' : 'Clouds: off';
+		if ( this.cloudsButton ) this.cloudsButton.textContent = on ? 'Clouds: on' : 'Clouds: off';
 
 	}
 

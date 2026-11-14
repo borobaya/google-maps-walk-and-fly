@@ -33,7 +33,7 @@ The key is kept in that browser tab only. It is sent to Google and nowhere else,
 
 - [Node.js](https://nodejs.org) 20.19 or newer (or 22.12 or newer).
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
-- A reasonably recent computer, phone or tablet. The clouds are demanding; press `K` to turn them off (they start off on phones).
+- A reasonably recent computer, phone or tablet. The clouds are demanding; press `K` to turn them off (phones and tablets go without them).
 
 ### 1. Get a Google API key
 
@@ -84,7 +84,7 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 | C | – | descend, faster the longer you hold; touching the ground lands you |
 | Space twice, or F | take off | drop to the ground |
 | Scroll | – | change flying speed |
-| K | clouds on / off | same |
+| K | clouds on / off (not on phones and tablets) | same |
 | H | hide / show the help panel | same |
 | U | hide / show the whole interface | same |
 
@@ -116,7 +116,7 @@ Either way up, three buttons sit on the right edge:
 | ▼ | – | descend, faster the longer you hold; touching the ground lands you |
 | Fly / Walk | take off | drop to the ground |
 
-Nothing is drawn for the drags: wherever your thumb lands is the centre, and how far you drag from there sets your pace. **Go to…** at the top right opens the place box and the clouds switch.
+Nothing is drawn for the drags: wherever your thumb lands is the centre, and how far you drag from there sets your pace. **Go to…** at the top right opens the place box.
 
 ### Going places
 
@@ -137,7 +137,7 @@ To search by place name as well, also enable the **Maps JavaScript API** and **G
 
 - **Street level is rough.** Google builds this mesh from aerial photos. It looks great from the air; up close, buildings are soft and trees are solid lumps.
 - **Coverage is Google's.** Most large cities are in 3D. Elsewhere you get flat satellite-textured terrain, and a few sensitive sites are deliberately flattened.
-- **Phones run a lighter version.** Clouds start switched off, the picture is drawn at a lower resolution (and lowered further if frames stay slow), and less of the world is kept in memory. How smooth it is depends on the phone.
+- **Phones run a lighter version.** There are no clouds, the picture is drawn at a lower resolution (and lowered further if frames stay slow), and less of the world is kept in memory. How smooth it is depends on the phone.
 - **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
 - **Apple's Lockdown Mode blocks it.** Lockdown Mode switches off 3D graphics in Safari on a Mac and in every browser on iPhone and iPad. The page says so and explains how to exclude just this website in Safari. Chrome and other browsers on iPhone and iPad cannot do that, so use Safari there.
 - **Lighting is fixed.** One mid-afternoon sun everywhere; there is no night.

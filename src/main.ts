@@ -216,7 +216,8 @@ function start( key: string, typed: boolean ) {
 
 	window.addEventListener( 'keydown', e => {
 
-		if ( e.code === 'KeyK' && ! e.repeat && ! ( e.target instanceof HTMLInputElement ) ) hud.showClouds( atmosphere.toggleClouds() );
+		// phones and tablets go without clouds, even with a keyboard attached
+		if ( e.code === 'KeyK' && ! e.repeat && ! quality.phone && ! ( e.target instanceof HTMLInputElement ) ) hud.showClouds( atmosphere.toggleClouds() );
 
 	} );
 

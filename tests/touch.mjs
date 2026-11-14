@@ -163,28 +163,16 @@ await up( 1 );
 await page.setViewport( PORTRAIT );
 await sleep( 800 );
 
-// --- the folded go-to box, and clouds ----------------------------------------
+// --- the folded go-to box ---------------------------------------------------
 const opener = await centre( '.goto-open' );
 await tap( opener.x, opener.y );
 await sleep( 300 );
 check( 'Go to… opens the box', await shown( '.goto' ) );
-const cloudsButton = await centre( '.goto .clouds' );
-const sky = () => page.evaluate( () => ( {
-	on: atmosphere.cloudsEnabled, held: !! atmosphere.clouds, label: document.querySelector( '.goto .clouds' ).textContent,
-	passes: atmosphere.composer.passes.length, listeners: atmosphere.aerial._listeners?.change?.length ?? 0,
-} ) );
-const sky0 = await sky();
-await tap( cloudsButton.x, cloudsButton.y );
-await sleep( 3000 );
-const sky1 = await sky();
-check( 'clouds switch on', sky1.on && sky1.held && sky1.label === 'Clouds: on', sky1 );
-await tap( cloudsButton.x, cloudsButton.y );
-await sleep( 500 );
-const sky2 = await sky();
-check( 'clouds switch off and are freed', ! sky2.on && ! sky2.held && sky2.label === 'Clouds: off', sky2 );
-for ( let i = 0; i < 6; i ++ ) { await tap( cloudsButton.x, cloudsButton.y ); await sleep( 400 ); }
-const sky3 = await sky();
-check( 'toggling clouds leaves nothing behind', sky3.passes === sky0.passes && sky3.listeners === sky0.listeners, [ sky0, sky3 ] );
+// a phone has no clouds: no switch in the box, and K (a tablet's keyboard) does nothing
+await page.keyboard.press( 'KeyK' );
+await sleep( 300 );
+const noClouds = await page.evaluate( () => ( { button: !! document.querySelector( '.goto .clouds' ), on: atmosphere.cloudsEnabled, held: !! atmosphere.clouds } ) );
+check( 'a phone offers no clouds, by button or by K', ! noClouds.button && ! noClouds.on && ! noClouds.held, noClouds );
 await tap( 195, 500 ); // the scene
 await sleep( 300 );
 check( 'touching the scene puts the box away', ! await shown( '.goto' ) );
@@ -497,6 +485,24 @@ check( 'no errors on the page', errors.length === 0, errors );
 	const l3 = await see();
 	check( 'laptop: the mouse and keys still work after a touch', l2.yaw < l1.yaw - 0.1 && l3.z !== l2.z && ! l3.one, [ l2, l3 ] );
 	check( 'laptop: back on the mouse and keys, the help returns and the buttons go', l3.help && ! l3.pad, l3 );
+
+	// clouds on a laptop: the switch (for its touchscreen) and K both work, and toggling leaks nothing
+	const sky = () => laptop.evaluate( () => ( {
+		on: atmosphere.cloudsEnabled, held: !! atmosphere.clouds, label: document.querySelector( '.goto .clouds' )?.textContent,
+		passes: atmosphere.composer.passes.length, listeners: atmosphere.aerial._listeners?.change?.length ?? 0,
+	} ) );
+	const sky0 = await sky();
+	await laptop.evaluate( () => document.querySelector( '.goto .clouds' ).click() );
+	await sleep( 500 );
+	const sky1 = await sky();
+	check( 'laptop: the clouds switch turns them off and frees them', ! sky1.on && ! sky1.held && sky1.label === 'Clouds: off', sky1 );
+	await laptop.keyboard.press( 'KeyK' );
+	await sleep( 3000 );
+	const sky2 = await sky();
+	check( 'laptop: K turns them back on', sky2.on && sky2.held && sky2.label === 'Clouds: on', sky2 );
+	for ( let i = 0; i < 6; i ++ ) { await laptop.keyboard.press( 'KeyK' ); await sleep( 400 ); }
+	const sky3 = await sky();
+	check( 'laptop: toggling clouds leaves nothing behind', sky3.on && sky3.passes === sky0.passes && sky3.listeners === sky0.listeners, [ sky0, sky3 ] );
 	check( 'laptop: no errors on the page', problems.length === 0, problems );
 	await laptop.close();
 
