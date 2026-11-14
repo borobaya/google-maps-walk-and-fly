@@ -140,7 +140,8 @@ const visit = ( url, test ) => {
 
 };
 
-const asksForKey = page => page.waitForSelector( '.setup form', { timeout: 10000 * SLOW } ).then( () => true, () => false );
+// generous: after Change API key the page reloads itself, which drawing in software slows right down
+const asksForKey = page => page.waitForSelector( '.setup form', { timeout: 20000 * SLOW } ).then( () => true, () => false );
 const started = page => page.waitForFunction( () => window.player, null, { polling: 250, timeout: 20000 * SLOW } ).then( () => true, () => false );
 const startsWithoutAsking = async page => await started( page ) && await page.$( '.setup form' ) === null;
 const stored = page => page.evaluate( k => ( { local: localStorage.getItem( k ), session: sessionStorage.getItem( k ) } ), KEY_STORE );
@@ -296,8 +297,8 @@ async function suite( engine ) {
 		page = await p.open();
 		check( 'a fresh visit does not ask again', await startsWithoutAsking( page ) );
 
-		// the page reloads itself: waiting for the key screen waits for the new page
-		await page.evaluate( () => document.querySelector( '.goto .forget' ).click() );
+		// the page reloads itself: wait for the new page, then for its key screen
+		await Promise.all( [ page.waitForEvent( 'load', { timeout: 60000 * SLOW } ), page.evaluate( () => document.querySelector( '.goto .forget' ).click() ) ] );
 		check( 'Change API key goes back to the key screen', await asksForKey( page ) );
 		const forgotten = await stored( page );
 		check( '…and forgets the key', forgotten.local === null && forgotten.session === null, forgotten );
