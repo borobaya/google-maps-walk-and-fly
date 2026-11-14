@@ -1,0 +1,11 @@
+# Keeps the actions the workflows use up to date, with a pull request each month.
+# (Security fixes for the npm packages come separately, as Dependabot security updates.)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
