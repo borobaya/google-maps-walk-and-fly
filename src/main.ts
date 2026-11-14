@@ -10,6 +10,9 @@ import './style.css';
 const EARTH_RADIUS = 6371000;
 
 const ui = document.getElementById( 'ui' )!;
+// Safari on iPhone and iPad ignores the page's wish not to be pinch-zoomed; its own gesture
+// events still let us refuse (a zoomed page leaves the buttons off screen or out of reach)
+for ( const type of [ 'gesturestart', 'gesturechange' ] ) document.addEventListener( type, e => e.preventDefault(), { passive: false } );
 const canvas = document.getElementById( 'view' ) as HTMLCanvasElement;
 
 // A key is either built in (your own copy, from .env.local) or typed in by the visitor (the public

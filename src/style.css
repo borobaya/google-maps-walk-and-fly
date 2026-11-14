@@ -38,7 +38,9 @@ html, body {
 	-webkit-touch-callout: none;
 }
 
-#ui > * { position: fixed; touch-action: manipulation; }
+/* panels may scroll, but never pinch- or double-tap-zoom the page: Safari keeps a zoom across
+   reloads and turns, and the scene underneath would not let you pinch back out */
+#ui > * { position: fixed; touch-action: pan-x pan-y; }
 
 .panel {
 	background: var(--panel);
