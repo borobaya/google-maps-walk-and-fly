@@ -127,6 +127,13 @@ export class Player {
 	 * forward stays level. Held sideways it is the usual two-thumb layout of mobile games: the
 	 * left half moves and the right half looks.
 	 */
+	/** True while something is being held to steer: a key, a mouse button or a finger on the scene, or ▲ ▼. */
+	get steering(): boolean {
+
+		return this.keys.size > 0 || this.dragging || this.movePointer !== null || this.stick.y !== 0;
+
+	}
+
 	get oneThumb(): boolean {
 
 		return this.touching && upright();

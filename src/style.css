@@ -48,7 +48,9 @@ html, body {
 	backdrop-filter: blur(8px);
 }
 
-.status { top: calc(12px + var(--st)); left: calc(12px + var(--sl)); pointer-events: none; }
+.status { top: calc(12px + var(--st)); left: calc(12px + var(--sl)); pointer-events: none; transition: opacity 0.4s; }
+/* faded while you click, touch or type; back after a quiet spell */
+.status.quiet { opacity: 0; transition-duration: 0.25s; }
 .status .mode {
 	display: block;
 	font-weight: 650;

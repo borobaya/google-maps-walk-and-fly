@@ -154,6 +154,23 @@ await sleep( 1500 );
 const d = await state();
 check( 'letting go stops you', d.stick.z === 0 && d.stick.turn === 0 && ! d.stick.fast && d.speed < 1, d );
 
+// the status panel steps aside while you steer, and comes back after ten quiet seconds
+const quiet = () => page.evaluate( () => ( { quiet: document.querySelector( '.status' ).classList.contains( 'quiet' ), opacity: + getComputedStyle( document.querySelector( '.status' ) ).opacity } ) );
+const q1 = await quiet();
+await sleep( 8000 );
+const q2 = await quiet();
+await down( 1, 200, 600 ); // a long hold keeps it away however long it lasts
+await sleep( 3000 );
+const q3 = await quiet();
+await up( 1 );
+await sleep( 9000 );
+const q4 = await quiet();
+await sleep( 1800 );
+const q5 = await quiet();
+check( 'the status panel fades while you steer', q1.quiet && q1.opacity < 0.05, q1 );
+check( 'it stays away for ten seconds after the last touch, and while a thumb is held', q2.quiet && q3.quiet && q4.quiet, [ q2, q3, q4 ] );
+check( 'it comes back after ten quiet seconds', ! q5.quiet && q5.opacity > 0.95, q5 );
+
 // an on-screen keyboard makes the window wider than tall; the phone is still upright
 await page.setViewport( { ...PORTRAIT, height: 300 } );
 await sleep( 400 );

@@ -188,6 +188,9 @@ export function showUnsupported( root: HTMLElement ) {
 
 }
 
+/** How long after the last click, touch or key press the status panel comes back, milliseconds. */
+const QUIET_AFTER = 10000;
+
 export class Hud {
 
 	onGoTo: ( ( lat: number, lng: number ) => void ) | null = null;
@@ -207,14 +210,22 @@ export class Hud {
 	/** A laptop's touchscreen has no K key; a phone has no clouds at all (too costly), so no button. */
 	private cloudsButton = quality.phone ? null : el( 'button', 'clouds' );
 	private nextSlow = 0;
+	private status = el( 'div', 'panel status' );
+	/** When the visitor last clicked, touched, scrolled or typed; -Infinity until they first do. */
+	private lastInput = - Infinity;
 	private bannerTimer = 0;
 
 	/** @param changeKey forgets a key the visitor typed in and returns to the start screen; null when the key is built in */
 	constructor( root: HTMLElement, private player: Player, private world: World, apiKey: string, private changeKey: ( () => void ) | null ) {
 
 		// status
-		const status = el( 'div', 'panel status' );
+		const status = this.status;
 		status.append( this.mode, this.stats );
+		// While you are clicking, touching or typing, the status panel fades away to leave the view
+		// clear. It comes back once nothing has been touched for QUIET_AFTER.
+		const touched = () => { this.lastInput = performance.now(); };
+		for ( const type of [ 'pointerdown', 'keydown', 'wheel' ] ) window.addEventListener( type, touched, { capture: true, passive: true } );
+		window.addEventListener( 'pointermove', e => { if ( e.buttons || e.pointerType === 'touch' ) touched(); }, { capture: true, passive: true } );
 
 		// go-to
 		const go = el( 'form', 'panel goto' );
@@ -446,6 +457,11 @@ export class Hud {
 	}
 
 	update( now: number ) {
+
+		// holding a key, button or thumb counts as still interacting, however long it is held
+		if ( this.player.steering ) this.lastInput = performance.now();
+		// while a new place loads, say so whatever you are doing
+		this.status.classList.toggle( 'quiet', ! this.player.settling && performance.now() - this.lastInput < QUIET_AFTER );
 
 		const p = this.player;
 		document.body.dataset.mode = p.mode;
