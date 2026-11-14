@@ -1,5 +1,5 @@
 import type { Player } from './player';
-import { upright } from './quality';
+import { installed, upright } from './quality';
 import type { World } from './world';
 
 export const PLACES: Array<{ name: string, lat: number, lng: number }> = [
@@ -111,8 +111,11 @@ export async function findPlace( query: string, key: string ): Promise<{ lat: nu
 
 }
 
-/** The start screen shown when no key is built in: the visitor pastes their own. */
-export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
+/**
+ * The start screen shown when no key is built in: the visitor pastes their own.
+ * @param kept true when the key will be remembered on this device (the installed app), not just for this tab
+ */
+export function showSetup( root: HTMLElement, kept: boolean, onKey: ( key: string ) => void ) {
 
 	const box = el( 'div', 'setup', `
 		<h1>Walk &amp; Fly</h1>
@@ -127,7 +130,10 @@ export function showSetup( root: HTMLElement, onKey: ( key: string ) => void ) {
 			<button>Start</button>
 		</form>
 		<p class="problem" role="alert"></p>
-		<p class="muted">Your key stays in this browser tab. It is sent only to Google and is forgotten when you close the tab. Google bills usage beyond its free monthly allowance to the key's owner, so consider setting a quota on it.</p>
+		<p class="muted">${ kept
+			? 'Your key is kept on this device, for this app only, until you choose <b>Change API key</b>. It is sent only to Google.'
+			: 'Your key stays in this browser tab. It is sent only to Google and is forgotten when you close the tab.'
+		} Google bills usage beyond its free monthly allowance to the key's owner, so consider setting a quota on it.</p>
 		<p class="muted">Running your own copy? You can put the key in <code>.env.local</code> instead; see the <a href="https://github.com/borobaya/google-maps-walk-and-fly#readme" target="_blank" rel="noreferrer">README</a>.</p>
 	` );
 	box.querySelector( '.origin' )!.textContent = `${ location.origin }/*`;
@@ -222,6 +228,46 @@ export class Hud {
 		select.append( new Option( 'Places…', '' ), ...PLACES.map( ( p, i ) => new Option( p.name, String( i ) ) ) );
 		const button = el( 'button', '', 'Go' );
 		go.append( input, button, select, this.note );
+
+		// "My location": one tap to where you are. Browsers only answer on a secure page.
+		if ( navigator.geolocation && window.isSecureContext ) {
+
+			const locate = el( 'button', 'locate', `
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+					<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+					<path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/>
+				</svg><span>My location</span>` );
+			locate.type = 'button';
+			locate.title = 'Go to my location';
+			locate.setAttribute( 'aria-label', 'Go to my location' );
+			locate.addEventListener( 'click', () => {
+
+				this.note.textContent = '';
+				locate.disabled = true;
+				navigator.geolocation.getCurrentPosition(
+					at => {
+
+						locate.disabled = false;
+						close();
+						this.onGoTo?.( at.coords.latitude, at.coords.longitude );
+
+					},
+					error => {
+
+						locate.disabled = false;
+						this.note.textContent = error.code === error.PERMISSION_DENIED
+							? 'Location is switched off for this page. Allow it in your browser or device settings, then try again.'
+							: 'Could not find your location. Try again, or type a place.';
+
+					},
+					// a fix from the last minute will do; otherwise ask for a good one
+					{ enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 },
+				);
+
+			} );
+			button.after( locate );
+
+		}
 		if ( changeKey ) {
 
 			const forget = el( 'button', 'forget', 'Change API key' );
@@ -235,6 +281,35 @@ export class Hud {
 		this.cloudsButton.type = 'button';
 		this.cloudsButton.addEventListener( 'click', () => { if ( this.onClouds ) this.showClouds( this.onClouds() ); } );
 		go.append( this.cloudsButton );
+
+		// Fullscreen, where the browser can do it (an iPhone cannot; there, add the page to the
+		// home screen instead). Opened from the home screen it already is.
+		const page = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+		const doc = document as Document & { webkitFullscreenEnabled?: boolean, webkitFullscreenElement?: Element, webkitExitFullscreen?: () => void };
+		if ( ( document.fullscreenEnabled || doc.webkitFullscreenEnabled ) && ! installed ) {
+
+			const full = el( 'button', 'fullscreen', 'Fullscreen' );
+			full.type = 'button';
+			const isFull = () => !! ( document.fullscreenElement ?? doc.webkitFullscreenElement );
+			full.addEventListener( 'click', () => {
+
+				// a refusal (the browser's choice) simply leaves things as they are
+				try {
+
+					if ( isFull() ) void ( document.exitFullscreen ? document.exitFullscreen() : doc.webkitExitFullscreen?.() );
+					else void ( page.requestFullscreen ? page.requestFullscreen().catch( () => {} ) : page.webkitRequestFullscreen?.() );
+
+				} catch { /* not allowed just now */ }
+
+				close();
+
+			} );
+			const label = () => { full.textContent = isFull() ? 'Exit fullscreen' : 'Fullscreen'; };
+			document.addEventListener( 'fullscreenchange', label );
+			document.addEventListener( 'webkitfullscreenchange', label );
+			go.append( full );
+
+		}
 
 		// on a small screen the whole box folds away behind this button
 		const open = el( 'button', 'panel goto-open', 'Go to…' );

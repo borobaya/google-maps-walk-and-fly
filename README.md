@@ -25,6 +25,8 @@ Open <https://borobaya.github.io/google-maps-walk-and-fly/> and paste a Google M
 
 The key is kept in that browser tab only. It is sent to Google and nowhere else, and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
 
+**On a phone, without the browser's bars:** add the page to your home screen (in Safari: Share → Add to Home Screen; in Chrome on Android: menu → Add to Home screen) and open it from there. Opened that way, the key is remembered on the device until you choose **Change API key**, because every launch would otherwise ask for it again. On Android, iPad and desktop there is also a **Fullscreen** button in the place box.
+
 ## Run it yourself
 
 ### What you need
@@ -118,7 +120,7 @@ Nothing is drawn for the drags: wherever your thumb lands is the centre, and how
 
 ### Going places
 
-Use the box at the top right to pick a preset city or type `latitude, longitude` (pasting a Google Maps link also works). The address bar keeps your position, so sharing the link takes someone to the same spot.
+Use the box at the top right to pick a preset city or type `latitude, longitude` (pasting a Google Maps link also works). The ⌖ **My location** button takes you to where you are, if you allow the browser to say. The address bar keeps your position, so sharing the link takes someone to the same spot.
 
 Where you begin, in order:
 

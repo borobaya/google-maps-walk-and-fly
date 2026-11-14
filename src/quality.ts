@@ -61,3 +61,10 @@ export function upright(): boolean {
 	return type ? type.startsWith( 'portrait' ) : window.innerHeight > window.innerWidth;
 
 }
+
+/**
+ * True when the page was opened from a home-screen icon (an installed web app) and so has
+ * no browser bars. Read once at start-up, before the Fullscreen button could confuse it.
+ */
+export const installed: boolean = matchMedia( '(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)' ).matches
+	|| ( navigator as { standalone?: boolean } ).standalone === true;

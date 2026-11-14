@@ -190,7 +190,7 @@ body.looking #view { cursor: grabbing; }
 	padding: 10px 14px;
 }
 .banner.show { display: block; }
-.banner button, .setup button, .goto .forget, .goto .clouds, .goto-open, .pad button {
+.banner button, .setup button, .goto .forget, .goto .clouds, .goto .fullscreen, .goto-open, .pad button {
 	font: inherit;
 	color: var(--text);
 	cursor: pointer;
@@ -200,7 +200,10 @@ body.looking #view { cursor: grabbing; }
 	background: rgba(124, 196, 255, 0.22);
 }
 .banner button { display: block; margin-top: 8px; }
-.goto .clouds { display: none; }
+.goto .clouds, .goto .fullscreen { display: none; }
+.goto .locate { display: inline-flex; align-items: center; gap: 6px; }
+/* in the wide layout there is only room for the symbol */
+.goto .locate span { display: none; }
 .goto-open { display: none; top: calc(12px + var(--st)); right: calc(12px + var(--sr)); padding: 8px 12px; }
 .goto .forget { flex-basis: 100%; padding: 2px 0; border: 0; background: none; color: var(--muted); font-size: 12px; text-align: right; }
 .goto .forget:hover { color: var(--text); text-decoration: underline; }
@@ -277,7 +280,7 @@ body[data-mode='walk'] .pad .down { display: block; visibility: hidden; }
 .pad button.held, .pad button:active { background: rgba(124, 196, 255, 0.45); }
 
 body.touch .help { display: none; }
-body.touch .goto .clouds { display: block; }
+body.touch .goto .clouds, body.touch .goto .fullscreen { display: block; }
 /* iOS zooms the page when a focused input's text is under 16px */
 body.touch .goto input, body.touch .goto select, body.touch .setup input, .setup input { font-size: 16px; }
 /* thumbs cover the bottom of the screen, so the hint goes higher up: below the status panel,
@@ -292,9 +295,15 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 	.goto:not(.open) { display: none; }
 	/* a set width, padding included: left to size itself, Safari makes it wider than the screen */
 	.goto { top: calc(100px + var(--st)); box-sizing: border-box; max-width: none; width: min(390px, calc(100vw - 24px - var(--sl) - var(--sr))); }
-	.goto input { flex: 1; width: auto; min-width: 0; }
-	.goto select { max-width: none; flex-basis: 100%; }
-	.goto .clouds { flex: 1; }
+	/* never down over the Google Maps logo, which must stay in view: scroll instead */
+	.goto { max-height: calc(100dvh - 100px - var(--st) - 34px - var(--sb)); overflow-y: auto; }
+	/* row one: the text box and Go. Its basis is too wide to share the row with anything else */
+	.goto input { flex: 1 1 60%; width: auto; min-width: 0; }
+	/* row two: My location and Places side by side; row three: clouds and fullscreen */
+	.goto select { max-width: none; flex: 1 1 40%; min-width: 0; }
+	.goto .locate { flex: 1 1 40%; justify-content: center; }
+	.goto .locate span { display: inline; }
+	.goto .clouds, .goto .fullscreen { flex: 1; }
 	.goto .forget { flex: 1; flex-basis: auto; }
 	/* the hint would sit on top of the open box */
 	.goto.open ~ .hint { display: none; }

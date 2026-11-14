@@ -2,7 +2,7 @@ import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three
 import { Atmosphere } from './atmosphere';
 import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
-import { quality } from './quality';
+import { installed, quality } from './quality';
 import { addTouchControls } from './touch';
 import { World } from './world';
 import './style.css';
@@ -13,16 +13,19 @@ const ui = document.getElementById( 'ui' )!;
 const canvas = document.getElementById( 'view' ) as HTMLCanvasElement;
 
 // A key is either built in (your own copy, from .env.local) or typed in by the visitor (the public
-// demo). A typed key is kept for this tab only: sessionStorage is dropped when the tab closes.
+// demo). In a browser tab a typed key is kept for that tab only: sessionStorage is dropped when
+// the tab closes. Installed on a home screen, every launch is a new session, so there it is kept
+// on the device until "Change API key" forgets it.
 const KEY_STORE = 'google-maps-api-key';
+const keys = (): Storage => installed ? localStorage : sessionStorage;
 const session = {
-	get: () => { try { return sessionStorage.getItem( KEY_STORE ); } catch { return null; } },
+	get: () => { try { return keys().getItem( KEY_STORE ); } catch { return null; } },
 	set: ( key: string | null ) => {
 
 		try {
 
-			if ( key ) sessionStorage.setItem( KEY_STORE, key );
-			else sessionStorage.removeItem( KEY_STORE );
+			if ( key ) keys().setItem( KEY_STORE, key );
+			else keys().removeItem( KEY_STORE );
 
 		} catch { /* storage is blocked: the key simply will not survive a reload */ }
 
@@ -39,7 +42,7 @@ else {
 
 	canvas.style.display = 'none';
 	document.body.style.background = '#0b0e12';
-	showSetup( ui, key => {
+	showSetup( ui, installed, key => {
 
 		session.set( key );
 		ui.replaceChildren();

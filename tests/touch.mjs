@@ -7,7 +7,7 @@
 // TEST_URL and CHROME override where the app is served and which browser is used.
 import puppeteer from 'puppeteer-core';
 
-const URL = `${ process.env.TEST_URL ?? 'http://localhost:5173/' }?profile=phone#51.50800,-0.12810`; // Trafalgar Square: open, level ground
+const PAGE = `${ process.env.TEST_URL ?? 'http://localhost:5173/' }?profile=phone#51.50800,-0.12810`; // Trafalgar Square: open, level ground
 const CHROME = process.env.CHROME ?? {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -25,7 +25,10 @@ const browser = await puppeteer.launch( {
 	args: [ ...GPU, '--window-size=390,844' ],
 	defaultViewport: PORTRAIT,
 } );
+// the browser will say we are at the Sydney Opera House, for the My location button
+await browser.defaultBrowserContext().overridePermissions( new URL( PAGE ).origin, [ 'geolocation' ] );
 const page = await browser.newPage();
+await page.setGeolocation( { latitude: - 33.8568, longitude: 151.2153 } );
 const errors = [];
 page.on( 'pageerror', e => errors.push( e.message ) );
 const cdp = await page.createCDPSession();
@@ -106,7 +109,7 @@ const loaded = async () => {
 
 };
 
-await page.goto( URL, { waitUntil: 'domcontentloaded' } );
+await page.goto( PAGE, { waitUntil: 'domcontentloaded' } );
 await page.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
 await loaded();
 
@@ -352,6 +355,22 @@ for ( const [ width, height ] of [ [ 320, 568 ], [ 360, 640 ], [ 390, 844 ], [ 4
 	if ( folded ) await page.evaluate( () => document.querySelector( '.goto-open' ).click() );
 	await sleep( 300 );
 	const opened = await layout();
+	if ( folded ) {
+
+		const typing = await page.$eval( '.goto input', n => n.getBoundingClientRect().width );
+		if ( typing < 150 ) opened.push( `place box only ${ Math.round( typing ) }px wide` );
+		// with an error showing too, the open box must still leave the Google Maps logo uncovered
+		await page.evaluate( () => { document.querySelector( '.note' ).textContent = 'Location is switched off for this page. Allow it in your browser or device settings, then try again.'; } );
+		const logo = await page.evaluate( () => {
+
+			const a = document.querySelector( '.goto' ).getBoundingClientRect(), b = document.querySelector( '.credits img' ).getBoundingClientRect();
+			return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+		} );
+		await page.evaluate( () => { document.querySelector( '.note' ).textContent = ''; } );
+		if ( logo ) opened.push( 'open box covers the Google Maps logo' );
+
+	}
 	check( `layout ${ width }×${ height }`, closed.length === 0 && opened.length === 0, { closed, opened } );
 
 }
@@ -380,6 +399,35 @@ await page.select( '.goto select', '0' );
 await sleep( 500 );
 check( 'picking a place puts the box away and sets off', ! await shown( '.goto' ) && await page.evaluate( () => player.settling ) );
 await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+
+await tap( opener.x, opener.y );
+await sleep( 300 );
+const boxed = await page.evaluate( () => {
+
+	const inside = sel => { const n = document.querySelector( sel ); return !! n && getComputedStyle( n ).display !== 'none' && n.getBoundingClientRect().width > 40; };
+	return { locate: inside( '.goto .locate' ), label: document.querySelector( '.goto .locate span' )?.textContent, fullscreen: inside( '.goto .fullscreen' ),
+		input: document.querySelector( '.goto input' ).getBoundingClientRect().width };
+
+} );
+check( 'the box offers My location and Fullscreen', boxed.locate && boxed.label === 'My location' && boxed.fullscreen, boxed );
+check( 'the place box keeps room to type', boxed.input > 200, boxed.input );
+const locate = await centre( '.goto .locate' );
+await tap( locate.x, locate.y );
+await page.waitForFunction( () => player.settling, { timeout: 20000 } ).catch( () => {} );
+check( 'My location puts the box away and sets off', ! await shown( '.goto' ) && await page.evaluate( () => player.settling ) );
+await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+const here = await page.evaluate( () => world.toLatLng( player.position ) );
+check( 'My location takes you where the browser says you are', Math.abs( here.lat + 33.8568 ) < 0.001 && Math.abs( here.lng - 151.2153 ) < 0.001, here );
+
+const app = await page.evaluate( async () => {
+
+	const link = document.querySelector( 'link[rel=manifest]' );
+	const manifest = await fetch( link.href ).then( r => r.json() );
+	const icons = await Promise.all( [ ...manifest.icons.map( i => new URL( i.src, link.href ).href ), document.querySelector( 'link[rel=apple-touch-icon]' ).href ].map( u => fetch( u ).then( r => r.ok ) ) );
+	return { display: manifest.display, start: manifest.start_url, icons, capable: document.querySelector( 'meta[name=apple-mobile-web-app-capable]' )?.content };
+
+} );
+check( 'added to a home screen it opens full screen: manifest and icons are served', app.display === 'fullscreen' && app.icons.every( Boolean ) && app.capable === 'yes', app );
 
 check( 'the page never scrolled or zoomed', await page.evaluate( () => scrollY === 0 && visualViewport.scale === 1 ) );
 
@@ -424,7 +472,7 @@ check( 'no errors on the page', errors.length === 0, errors );
 	const problems = [];
 	laptop.on( 'pageerror', e => problems.push( e.message ) );
 	await laptop.setViewport( { width: 1280, height: 720, hasTouch: true, isLandscape: true } );
-	await laptop.goto( URL.replace( 'profile=phone', 'profile=desktop' ), { waitUntil: 'domcontentloaded' } );
+	await laptop.goto( PAGE.replace( 'profile=phone', 'profile=desktop' ), { waitUntil: 'domcontentloaded' } );
 	await laptop.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
 	const see = () => laptop.evaluate( () => ( {
 		pad: getComputedStyle( document.querySelector( '.pad' ) ).display !== 'none', help: getComputedStyle( document.querySelector( '.help' ) ).display !== 'none',
@@ -452,6 +500,18 @@ check( 'no errors on the page', errors.length === 0, errors );
 	check( 'laptop: no errors on the page', problems.length === 0, problems );
 	await laptop.close();
 
+	// a browser that will not say where it is: the box explains, and nothing moves
+	const privateContext = await browser.createBrowserContext();
+	const refused = await privateContext.newPage();
+	await refused.setViewport( { width: 1280, height: 720 } );
+	await refused.goto( PAGE.replace( 'profile=phone', 'profile=desktop' ), { waitUntil: 'domcontentloaded' } );
+	await refused.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
+	await refused.click( '.goto .locate' );
+	await refused.waitForFunction( () => document.querySelector( '.note' ).textContent !== '', { timeout: 20000 } ).catch( () => {} );
+	const told = await refused.evaluate( () => ( { note: document.querySelector( '.note' ).textContent, settling: player.settling, busy: document.querySelector( '.goto .locate' ).disabled } ) );
+	check( 'location refused: the box says so and you stay put', told.note.includes( 'Location is switched off' ) && ! told.settling && ! told.busy, told );
+	await privateContext.close();
+
 }
 
 // --- a browser that cannot draw it at all ----------------------------------------
@@ -459,7 +519,7 @@ check( 'no errors on the page', errors.length === 0, errors );
 
 	const old = await browser.newPage();
 	await old.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
-	await old.goto( URL, { waitUntil: 'domcontentloaded' } );
+	await old.goto( PAGE, { waitUntil: 'domcontentloaded' } );
 	const said = await old.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => e.textContent ) ).catch( () => '' );
 	check( 'a browser without WebGL gets an explanation, not a blank page', said.includes( 'cannot draw the 3D world' ) && ! said.includes( 'Lockdown' ), said.trim().slice( 0, 80 ) );
 	await old.close();
@@ -469,7 +529,7 @@ check( 'no errors on the page', errors.length === 0, errors );
 	await locked.setUserAgent( 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1' );
 	await locked.setViewport( { width: 320, height: 568, isMobile: true, hasTouch: true } );
 	await locked.evaluateOnNewDocument( () => { HTMLCanvasElement.prototype.getContext = () => null; } );
-	await locked.goto( URL, { waitUntil: 'domcontentloaded' } );
+	await locked.goto( PAGE, { waitUntil: 'domcontentloaded' } );
 	const advice = await locked.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => {
 
 		const r = e.getBoundingClientRect();

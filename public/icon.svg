@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f8fe0"/>
+      <stop offset="0.72" stop-color="#a9d3f5"/>
+      <stop offset="1" stop-color="#dcecf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <!-- a skyline along the bottom -->
+  <rect y="440" width="512" height="72" fill="#22364d" opacity="0.92"/>
+  <path fill="#22364d" d="M0 441V404h46v-34h40v52h34v-96h52v70h30v-44h44v60h36v-104h30l14-30 14 30h30v124h34v-58h46v40h32v-74h30v37H0z" opacity="0.92"/>
+  <!-- a bird, wings spread, gliding over it -->
+  <path fill="#fff" transform="translate(0 -64)" d="M256 268c-34-62-96-98-176-96 62 14 104 46 128 96-22-10-44-12-66-4 40 8 72 28 96 60 6 8 30 8 36 0 24-32 56-52 96-60-22-8-44-6-66 4 24-50 66-82 128-96-80-2-142 34-176 96z"/>
+</svg>
