@@ -41,7 +41,6 @@ const ORIGIN = new URL( BASE ).origin;
 // one pixel per point: these checks need no sharp picture, and drawing without a chip is slow
 const PHONE = { ...PORTRAIT, deviceScaleFactor: 1 };
 const SLOW = process.env.SOFTWARE ? 5 : 1; // upper bounds only: a pass takes no longer
-const browser = await launch( PHONE );
 const errors = [];
 // Every request any page makes, so that the key can be shown to reach only Google, and the
 // policy to block nothing the app needs
@@ -64,27 +63,51 @@ const watch = page => {
 
 	} );
 	page.on( 'console', m => { if ( m.text().startsWith( 'blocked: ' ) && ! m.text().includes( 'key-thief.invalid' ) ) errors.push( m.text() ); } );
+	// scripts added from here on belong to one visit, and are dropped before the next
+	const add = page.evaluateOnNewDocument.bind( page );
+	page.visit = [];
+	page.evaluateOnNewDocument = async ( ...args ) => { const added = await add( ...args ); page.visit.push( added.identifier ); return added; };
 	return page;
 
 };
 
-/** A fresh browser profile: nothing stored, and location allowed only when given one. */
+/**
+ * A fresh browser profile: nothing stored, and location allowed only when given one.
+ *
+ * Each profile is a Chrome of its own, with one tab, shut entirely when done with. Without a
+ * graphics chip (on GitHub), closing a tab and opening another can stall Chrome for minutes, so
+ * tabs are never closed and opened mid-run.
+ */
 const profile = async geo => {
 
-	const ctx = await browser.createBrowserContext();
-	if ( geo ) await ctx.overridePermissions( ORIGIN, [ 'geolocation' ] );
+	const chrome = await launch( PHONE );
+	if ( geo ) await chrome.defaultBrowserContext().overridePermissions( ORIGIN, [ 'geolocation' ] );
+	let page = null;
 	return {
-		ctx,
+		ctx: { close: () => chrome.close() },
 		/**
-		 * A new tab, as a fresh visit: sessionStorage starts empty. `seed` runs before the app, on its
-		 * first load only. The world is not drawn (no check needs the picture) unless `draw` is set:
-		 * tiles load only as frames are drawn, so waiting for Google's answer about the key needs it.
+		 * A fresh visit, as in a new tab: sessionStorage starts empty. `seed` runs before the app, on
+		 * its first load only. The world is not drawn (no check needs the picture) unless `draw` is
+		 * set: tiles load only as frames are drawn, so waiting for Google's answer about the key needs it.
 		 */
 		open: async ( url = BASE, { seed, before, draw = false } = {} ) => {
 
-			const page = watch( await ctx.newPage() );
-			page.setDefaultTimeout( 30000 * SLOW );
-			if ( geo ) await page.setGeolocation( geo );
+			if ( page ) {
+
+				// the same tab, made new: its own storage cleared and the last visit's scripts dropped
+				await rest( page );
+				await page.evaluate( () => sessionStorage.clear() ).catch( () => {} );
+				for ( const id of page.visit.splice( 0 ) ) await page.removeScriptToEvaluateOnNewDocument( id );
+				await page.goto( 'about:blank' );
+
+			} else {
+
+				page = watch( ( await chrome.pages() )[ 0 ] ?? await chrome.newPage() );
+				page.setDefaultTimeout( 30000 * SLOW );
+				if ( geo ) await page.setGeolocation( geo );
+
+			}
+
 			if ( before ) await before( page );
 			if ( ! draw ) {
 
@@ -119,12 +142,11 @@ const profile = async geo => {
 	};
 
 };
-// Without a graphics chip, drawing the world is slow enough to starve everything else (on
-// GitHub, opening the next tab timed out while a closed page's frames were still being drawn).
-// So pages draw only when a check needs it (see `open`), and stop before they are closed.
+// Without a graphics chip, drawing the world is slow enough to starve everything else, so pages
+// draw only when a check needs it (see `open`), and stop when done with.
 const rest = page => page.evaluate( () => { if ( window.capture ) window.capture.paused = true; } ).catch( () => {} );
-const shut = async page => { await rest( page ); await page.close(); };
-const leave = async ctx => { for ( const page of await ctx.pages() ) await rest( page ); await ctx.close(); };
+const shut = rest;
+const leave = ctx => ctx.close();
 const withKey = ( more = '' ) => ( { code: `localStorage.setItem( '${ KEY_STORE }', '${ DUMMY }' ); ${ more }`, args: null } );
 const asksForKey = page => page.waitForSelector( '.setup form', { timeout: 10000 * SLOW } ).then( () => true, () => false );
 const started = page => page.waitForFunction( () => window.player, { polling: 250, timeout: 20000 * SLOW } ).then( () => true, () => false );
@@ -407,7 +429,6 @@ check( 'the key went to Google and nowhere else', leaks.size === 0 && [ ...sent.
 check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => GOOGLE.includes( h ) ), [ ...hosts ] );
 check( 'no errors on any page, and nothing the app needs was blocked', errors.length === 0, errors );
 
-await browser.close();
 await server.close();
 await rm( noEnv, { recursive: true, force: true } );
 finish();
