@@ -231,7 +231,7 @@ body.looking #view { cursor: grabbing; }
 .setup a { color: var(--accent); }
 .setup code { background: rgba(255, 255, 255, 0.1); padding: 1px 5px; border-radius: 4px; }
 .setup form { display: flex; gap: 8px; margin: 14px 0 4px; }
-.setup input {
+.setup form input {
 	flex: 1;
 	min-width: 0;
 	font: inherit;
@@ -243,6 +243,8 @@ body.looking #view { cursor: grabbing; }
 	padding: 8px 10px;
 }
 .setup input.bad { border-color: #ff8a80; }
+.setup .remember { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; cursor: pointer; }
+.setup .remember input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .setup :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .setup .problem { color: #ffb4ab; min-height: 1.5em; margin: 0; }
 .muted { color: var(--muted); font-size: 13px; }

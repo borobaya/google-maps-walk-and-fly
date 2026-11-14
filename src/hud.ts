@@ -113,9 +113,9 @@ export async function findPlace( query: string, key: string ): Promise<{ lat: nu
 
 /**
  * The start screen shown when no key is built in: the visitor pastes their own.
- * @param kept true when the key will be remembered on this device (the installed app), not just for this tab
+ * @param onKey given the key, and whether to remember it on this device rather than for this tab only
  */
-export function showSetup( root: HTMLElement, kept: boolean, onKey: ( key: string ) => void ) {
+export function showSetup( root: HTMLElement, onKey: ( key: string, remember: boolean ) => void ) {
 
 	const box = el( 'div', 'setup', `
 		<h1>Walk &amp; Fly</h1>
@@ -129,16 +129,15 @@ export function showSetup( root: HTMLElement, kept: boolean, onKey: ( key: strin
 			<input aria-label="Google Maps Platform API key" placeholder="Your API key" autocomplete="off" autocapitalize="off" spellcheck="false">
 			<button>Start</button>
 		</form>
+		<label class="remember"><input type="checkbox" checked> Remember the key on this device</label>
 		<p class="problem" role="alert"></p>
-		<p class="muted">${ kept
-			? 'Your key is kept on this device, for this app only, until you choose <b>Change API key</b>. It is sent only to Google.'
-			: 'Your key stays in this browser tab. It is sent only to Google and is forgotten when you close the tab.'
-		} Google bills usage beyond its free monthly allowance to the key's owner, so consider setting a quota on it.</p>
+		<p class="muted">Your key is sent only to Google. Remembered, it stays in this browser on this device until you choose <b>Change API key</b>; otherwise it is forgotten when you close the tab. Untick it on a shared computer. Google bills usage beyond its free monthly allowance to the key's owner, so consider setting a quota on it.</p>
 		<p class="muted">Running your own copy? You can put the key in <code>.env.local</code> instead; see the <a href="https://github.com/borobaya/google-maps-walk-and-fly#readme" target="_blank" rel="noreferrer">README</a>.</p>
 	` );
 	box.querySelector( '.origin' )!.textContent = `${ location.origin }/*`;
 
-	const input = box.querySelector( 'input' )!;
+	const input = box.querySelector( 'form input' ) as HTMLInputElement;
+	const remember = box.querySelector( '.remember input' ) as HTMLInputElement;
 	const problem = box.querySelector( '.problem' )!;
 	box.querySelector( 'form' )!.addEventListener( 'submit', e => {
 
@@ -153,7 +152,7 @@ export function showSetup( root: HTMLElement, kept: boolean, onKey: ( key: strin
 
 		}
 
-		onKey( key );
+		onKey( key, remember.checked );
 
 	} );
 	root.append( box );

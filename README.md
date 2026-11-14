@@ -23,9 +23,9 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 Open <https://borobaya.github.io/google-maps-walk-and-fly/> and paste a Google Maps Platform API key ([how to get one](#1-get-a-google-api-key)). If you restrict the key to websites, add `https://borobaya.github.io/*`.
 
-The key is kept in that browser tab only. It is sent to Google and nowhere else, and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
+The key is sent to Google and nowhere else. It is remembered in that browser on that device until you choose **Change API key**; untick **Remember the key on this device** on a shared computer and it is forgotten when you close the tab. Usage is billed to your key, as described under [What it costs](#what-it-costs).
 
-**On a phone, without the browser's bars:** add the page to your home screen (in Safari: Share → Add to Home Screen; in Chrome on Android: menu → Add to Home screen) and open it from there. Opened that way, the key is remembered on the device until you choose **Change API key**, because every launch would otherwise ask for it again. On Android, iPad and desktop there is also a **Fullscreen** button in the place box.
+**On a phone, without the browser's bars:** add the page to your home screen (in Safari: Share → Add to Home Screen; in Chrome on Android: menu → Add to Home screen) and open it from there. The home-screen app keeps its own storage, so it asks for the key once more the first time. On Android, iPad and desktop there is also a **Fullscreen** button in the place box.
 
 ## Run it yourself
 
