@@ -40,7 +40,7 @@ const ORIGIN = new URL( BASE ).origin;
 
 // one pixel per point: these checks need no sharp picture, and drawing without a chip is slow
 const PHONE = { ...PORTRAIT, deviceScaleFactor: 1 };
-const SLOW = process.env.SOFTWARE ? 3 : 1;
+const SLOW = process.env.SOFTWARE ? 5 : 1; // upper bounds only: a pass takes no longer
 const browser = await launch( PHONE );
 const errors = [];
 // Every request any page makes, so that the key can be shown to reach only Google, and the
@@ -75,13 +75,27 @@ const profile = async geo => {
 	if ( geo ) await ctx.overridePermissions( ORIGIN, [ 'geolocation' ] );
 	return {
 		ctx,
-		/** A new tab, as a fresh visit: sessionStorage starts empty. `seed` runs before the app, on its first load only. */
-		open: async ( url = BASE, { seed, before } = {} ) => {
+		/**
+		 * A new tab, as a fresh visit: sessionStorage starts empty. `seed` runs before the app, on its
+		 * first load only. The world is not drawn (no check needs the picture) unless `draw` is set:
+		 * tiles load only as frames are drawn, so waiting for Google's answer about the key needs it.
+		 */
+		open: async ( url = BASE, { seed, before, draw = false } = {} ) => {
 
 			const page = watch( await ctx.newPage() );
 			page.setDefaultTimeout( 30000 * SLOW );
 			if ( geo ) await page.setGeolocation( geo );
 			if ( before ) await before( page );
+			if ( ! draw ) {
+
+				await page.evaluateOnNewDocument( () => {
+
+					let capture;
+					Object.defineProperty( window, 'capture', { configurable: true, get: () => capture, set: value => { value.paused = true; capture = value; } } );
+
+				} );
+
+			}
 			if ( seed ) {
 
 				await page.evaluateOnNewDocument( ( code, args ) => {
@@ -105,9 +119,15 @@ const profile = async geo => {
 	};
 
 };
+// Without a graphics chip, drawing the world is slow enough to starve everything else (on
+// GitHub, opening the next tab timed out while a closed page's frames were still being drawn).
+// So pages draw only when a check needs it (see `open`), and stop before they are closed.
+const rest = page => page.evaluate( () => { if ( window.capture ) window.capture.paused = true; } ).catch( () => {} );
+const shut = async page => { await rest( page ); await page.close(); };
+const leave = async ctx => { for ( const page of await ctx.pages() ) await rest( page ); await ctx.close(); };
 const withKey = ( more = '' ) => ( { code: `localStorage.setItem( '${ KEY_STORE }', '${ DUMMY }' ); ${ more }`, args: null } );
 const asksForKey = page => page.waitForSelector( '.setup form', { timeout: 10000 * SLOW } ).then( () => true, () => false );
-const started = page => page.waitForFunction( () => window.player, { timeout: 20000 * SLOW } ).then( () => true, () => false );
+const started = page => page.waitForFunction( () => window.player, { polling: 250, timeout: 20000 * SLOW } ).then( () => true, () => false );
 const startsWithoutAsking = async page => await started( page ) && await page.$( '.setup form' ) === null;
 const stored = page => page.evaluate( k => ( { local: localStorage.getItem( k ), session: sessionStorage.getItem( k ) } ), KEY_STORE );
 /** Where you are, once you are near the expected spot (or after `wait` ms). */
@@ -119,7 +139,7 @@ const near = async ( page, lat, lng, wait = 20000 * SLOW ) => {
 		const at = world.toLatLng( player.position );
 		return Math.abs( at.lat - lat ) < 1e-3 && Math.abs( at.lng - lng ) < 1e-3;
 
-	}, { timeout: wait }, lat, lng ).catch( () => {} );
+	}, { polling: 250, timeout: wait }, lat, lng ).catch( () => {} );
 	// with a made-up key no ground ever loads, so you are still arriving: the mode you will land in is the one to look at
 	return page.evaluate( () => window.player ? { ...world.toLatLng( player.position ), mode: player.resume?.mode ?? player.mode, heading: Math.round( player.heading ) } : null );
 
@@ -165,7 +185,7 @@ const round = at => at && { lat: + at.lat.toFixed( 4 ), lng: + at.lng.toFixed( 4
 	await page.click( '.setup form button' );
 	const junk = await page.$eval( '.problem', e => e.textContent );
 	check( 'an empty box or something that is not a key is refused, saying why', empty === 'Paste your API key first.' && junk.startsWith( 'That does not look like an API key' ) && await page.$( '.setup form' ) !== null, [ empty, junk ] );
-	await ctx.close();
+	await leave( ctx );
 
 }
 
@@ -173,7 +193,7 @@ const round = at => at && { lat: + at.lat.toFixed( 4 ), lng: + at.lng.toFixed( 4
 {
 
 	const { ctx, open } = await profile();
-	let page = await open();
+	let page = await open( BASE, { draw: true } );
 	await asksForKey( page );
 	await page.type( '.setup form input', DUMMY );
 	await page.click( '.setup form button' );
@@ -183,11 +203,11 @@ const round = at => at && { lat: + at.lat.toFixed( 4 ), lng: + at.lng.toFixed( 4
 	check( 'it is remembered on the device', kept.local === DUMMY && kept.session === null, kept );
 
 	// Google refuses the made-up key: the page says so and offers another go
-	const refusal = await page.waitForSelector( '.banner.show', { timeout: 30000 } )
+	const refusal = await page.waitForSelector( '.banner.show', { timeout: 30000 * SLOW } )
 		.then( n => n.evaluate( e => ( { text: e.innerText, button: e.querySelector( 'button' )?.textContent } ) ) ).catch( () => null );
 	check( 'a key Google turns down is reported, with a way to enter another', !! refusal && refusal.text.includes( 'Google' ) && refusal.button === 'Enter a different key', refusal );
 
-	await page.close();
+	await shut( page );
 	page = await open();
 	check( 'a fresh visit does not ask again', await startsWithoutAsking( page ) );
 
@@ -204,18 +224,18 @@ const round = at => at && { lat: + at.lat.toFixed( 4 ), lng: + at.lng.toFixed( 4
 	check( 'unticked, the key is kept for this tab only', tabOnly.local === null && tabOnly.session === DUMMY, tabOnly );
 	await page.reload( { waitUntil: 'domcontentloaded' } );
 	check( '…so a reload does not ask', await startsWithoutAsking( page ) );
-	await page.close();
-	page = await open();
+	await shut( page );
+	page = await open( BASE, { draw: true } );
 	check( '…but a fresh visit does', await asksForKey( page ) );
 
 	// "Enter a different key" on Google's refusal forgets it too
 	await page.type( '.setup form input', DUMMY );
 	await page.click( '.setup form button' );
 	await started( page );
-	const retry = await page.waitForSelector( '.banner.show button', { timeout: 30000 } ).catch( () => null );
+	const retry = await page.waitForSelector( '.banner.show button', { timeout: 30000 * SLOW } ).catch( () => null );
 	if ( retry ) await Promise.all( [ page.waitForNavigation(), retry.click() ] );
 	check( 'Enter a different key goes back to the key screen and forgets it', !! retry && await asksForKey( page ) && ( await stored( page ) ).local === null );
-	await ctx.close();
+	await leave( ctx );
 
 }
 
@@ -231,17 +251,17 @@ const round = at => at && { lat: + at.lat.toFixed( 4 ), lng: + at.lng.toFixed( 4
 	await page.click( '.setup form button' );
 	await started( page );
 	check( 'the home-screen app offers no Fullscreen button (it is full screen already)', await page.$( '.goto .fullscreen' ) === null );
-	await page.close();
+	await shut( page );
 	page = await open( BASE, homeScreen );
 	check( 'the home-screen app keeps the key between launches', await startsWithoutAsking( page ) );
-	await ctx.close();
+	await leave( ctx );
 
 	const tab = await profile();
 	page = await tab.open( BASE, { seed: withKey() } );
 	await started( page );
 	const offered = await page.evaluate( () => ( { button: !! document.querySelector( '.goto .fullscreen' ), can: document.fullscreenEnabled } ) );
 	check( 'a browser tab offers Fullscreen where the browser can', offered.button === offered.can, offered );
-	await tab.ctx.close();
+	await leave( tab.ctx );
 
 }
 
@@ -253,44 +273,44 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 	let p = await profile();
 	let at = await near( await p.open( BASE, { seed: withKey() } ), 51.5055, - 0.0754 );
 	check( 'with location refused and nothing else to go on, you begin at the first preset', isAt( at, 51.5055, - 0.0754 ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	at = await near( await p.open( BASE, { seed: withKey() } ), PARIS.latitude, PARIS.longitude );
 	check( 'with location allowed, you begin where you are', isAt( at, PARIS.latitude, PARIS.longitude ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	at = await near( await p.open( `${ BASE }#40.74840,-73.98570`, { seed: withKey() } ), 40.7484, - 73.9857 );
 	check( 'a link wins over your location', isAt( at, 40.7484, - 73.9857 ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	at = await near( await p.open( BASE, { seed: lastVisit( 6 ) } ), 35.6586, 139.7454 );
 	check( 'a visit in the last week resumes there, on foot, facing the same way', isAt( at, 35.6586, 139.7454 ) && at.mode === 'walk' && at.heading === 90, round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	at = await near( await p.open( `${ BASE }#35.65860,139.74540`, { seed: lastVisit( 1 ) } ), 35.6586, 139.7454 );
 	check( 'a link to where you left off is a reload: you resume, still on foot', isAt( at, 35.6586, 139.7454 ) && at.mode === 'walk' && at.heading === 90, round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	at = await near( await p.open( `${ BASE }#40.74840,-73.98570`, { seed: lastVisit( 1 ) } ), 40.7484, - 73.9857 );
 	check( 'a link to somewhere else wins over where you left off', isAt( at, 40.7484, - 73.9857 ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	let page = await p.open( BASE, { seed: lastVisit( 8 ) } );
 	at = await near( page, PARIS.latitude, PARIS.longitude );
 	check( 'a visit more than a week ago is forgotten', isAt( at, PARIS.latitude, PARIS.longitude ) && await page.evaluate( k => localStorage.getItem( k ) === null, LAST_STORE ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile( PARIS );
 	page = await p.open( BASE, { seed: lastVisit( 1, { lat: 'nowhere' } ) } );
 	at = await near( page, PARIS.latitude, PARIS.longitude );
 	check( 'a damaged record of the last visit is ignored', isAt( at, PARIS.latitude, PARIS.longitude ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 	p = await profile();
 	page = await p.open( `${ BASE }#%`, { seed: withKey() } );
@@ -298,7 +318,7 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 	await page.evaluate( () => { location.hash = '#48.85840,2.29450'; } );
 	at = await near( page, PARIS.latitude, PARIS.longitude );
 	check( 'a link pasted into the address bar while it is open is followed', isAt( at, PARIS.latitude, PARIS.longitude ), round( at ) );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 }
 
@@ -312,7 +332,7 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 	await page.evaluate( () => document.querySelector( '.goto-open' )?.click() );
 	await page.type( '.goto input', 'Eiffel Tower' );
 	await page.keyboard.press( 'Enter' );
-	const note = await page.waitForFunction( () => document.querySelector( '.note' ).textContent, { timeout: 30000 } ).then( h => h.jsonValue(), () => '' );
+	const note = await page.waitForFunction( () => document.querySelector( '.note' ).textContent, { polling: 250, timeout: 30000 * SLOW } ).then( h => h.jsonValue(), () => '' );
 	check( 'searching by name reaches Google, and a refusal is explained', note.includes( 'Searching by name needs' ), note );
 
 	// a change that tried to send the key elsewhere is stopped by the page's security policy
@@ -332,7 +352,7 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 
 	}, DUMMY );
 	check( 'the page refuses to send anything to another site, by fetch, beacon, image or script', [ 'connect-src', 'img-src', 'script-src-elem' ].every( d => tried.some( t => t.startsWith( d.split( '-elem' )[ 0 ] ) ) ) && tried.length >= 4 && ! [ ...sent.keys() ].some( r => r.url().includes( 'key-thief.invalid' ) ), tried );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 }
 
@@ -349,7 +369,7 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 	} ) );
 	// Safari keeps a pinch-zoom across reloads, and the scene would not let you pinch back out
 	check( 'nothing can pinch- or double-tap-zoom the page', zoom.viewport.includes( 'maximum-scale=1' ) && zoom.scene === 'none' && zoom.panels.every( t => t === 'pan-x pan-y' || t === 'none' ), zoom );
-	await p.ctx.close();
+	await leave( p.ctx );
 
 }
 
@@ -361,13 +381,13 @@ const lastVisit = ( daysAgo, extra = {} ) => withKey( `localStorage.setItem( '${
 
 		const p = await profile();
 		const page = await p.open( BASE, { seed: withKey(), before: async page => { await noWebGL( page ); if ( ua ) await page.setUserAgent( ua ); await page.setViewport( viewport ); } } );
-		const said = await page.waitForSelector( '.setup', { timeout: 15000 } ).then( n => n.evaluate( e => {
+		const said = await page.waitForSelector( '.setup', { timeout: 15000 * SLOW } ).then( n => n.evaluate( e => {
 
 			const r = e.getBoundingClientRect();
 			return { text: e.textContent, fits: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight + 0.5 };
 
 		} ) ).catch( () => ( { text: '', fits: false } ) );
-		await p.ctx.close();
+		await leave( p.ctx );
 		return said;
 
 	};

@@ -26,11 +26,29 @@ export const launch = ( viewport, args = [] ) => puppeteer.launch( {
 	defaultViewport: viewport,
 } );
 
+// On GitHub, failures are also written as annotations: they show on the run and the pull
+// request, where anyone can read them (a run's full log needs a signed-in account).
+const github = !! process.env.GITHUB_ACTIONS;
+const annotate = ( title, text ) => { if ( github ) console.log( `::error title=${ title.replace( /[:,\n]/g, ' ' ) }::${ String( text ).replace( /%/g, '%25' ).replace( /\r/g, '%0D' ).replace( /\n/g, '%0A' ).slice( 0, 2000 ) }` ); };
+for ( const event of [ 'uncaughtException', 'unhandledRejection' ] ) {
+
+	process.on( event, e => {
+
+		console.error( e );
+		annotate( 'The test script stopped', e?.stack ?? e );
+		process.exit( 1 );
+
+	} );
+
+}
+
 let failed = 0;
 export const check = ( name, ok, detail ) => {
 
 	if ( ! ok ) failed ++;
-	console.log( `${ ok ? 'ok  ' : 'FAIL' } ${ name }${ detail === undefined ? '' : `  ${ JSON.stringify( detail ) }` }` );
+	const shown = detail === undefined ? '' : JSON.stringify( detail );
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } ${ name }${ shown ? `  ${ shown }` : '' }` );
+	if ( ! ok ) annotate( name, shown || 'failed' );
 
 };
 /** Prints the total and exits, failing if any check did. */
