@@ -534,6 +534,123 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 
 }
 
+// --- Street View, with made-up panoramas ---------------------------------------------------
+// The 3D tiles are real; every Street View answer is made up here, so nothing of it reaches Google
+// (and none of it is billed). Eleven panoramas 4 m apart along Westminster Bridge, the nearest linking the last two.
+{
+
+	const LAT = 51.50080, LNG = - 0.12150;
+	const ONE_PIXEL = Buffer.from( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM446IEAAMSATP56IVbAAAAAElFTkSuQmCC', 'base64' );
+	const panos = [ 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40 ].map( ( d, i ) => ( {
+		panoId: 'pano' + i, lat: LAT, lng: LNG - d / ( 111320 * Math.cos( LAT * Math.PI / 180 ) ), heading: 270, tilt: 90, roll: 0,
+		imageWidth: 16384, imageHeight: 8192, tileWidth: 512, tileHeight: 512, date: '2024-05', copyright: '© 2024 Google',
+		reportProblemLink: 'https://www.google.com/local/imagery/report/?made-up', links: i === 0 ? [ { panoId: 'pano9' }, { panoId: 'pano10' } ] : [],
+	} ) );
+	const asked = [];
+	let answer = 200;
+	const sv = await browser.newPage();
+	await guard( sv, errors );
+	await sv.setRequestInterception( true );
+	const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET, POST' };
+	const respond = r => {
+
+		const u = new URL( r.url() );
+		const street = /\/v1\/streetview\//.test( u.pathname ) || ( u.pathname.endsWith( '/v1/createSession' ) && /streetview/.test( r.postData() ?? '' ) );
+		if ( r.method() === 'OPTIONS' && /\/v1\/(streetview|createSession)/.test( u.pathname ) ) return r.respond( { status: 204, headers: cors } );
+		if ( ! street ) return r.continue();
+		const what = u.pathname.endsWith( 'createSession' ) ? 'session' : u.pathname.split( '/streetview/' )[ 1 ].split( '/' )[ 0 ];
+		const tile = u.pathname.match( /tiles\/(\d+)\/(\d+)\/(\d+)/ );
+		asked.push( { what, pano: u.searchParams.get( 'panoId' ), y: tile ? + tile[ 3 ] : null, session: u.searchParams.get( 'session' ), t: Date.now() } );
+		const json = o => r.respond( { status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify( o ) } );
+		if ( answer === 429 ) return r.respond( { status: 429, headers: cors, contentType: 'application/json', body: JSON.stringify( { error: { code: 429, message: "Quota exceeded for quota metric 'Street View Tiles requests' and limit 'Street View Tiles requests per day' (made up)" } } ) } );
+		if ( what === 'session' ) return json( { session: 'made-up-session', expiry: String( Math.round( Date.now() / 1000 ) + 14 * 86400 ) } );
+		if ( what === 'panoIds' ) return json( { panoIds: panos.slice( 0, 9 ).map( p => p.panoId ) } );
+		if ( what === 'metadata' ) return json( panos.find( p => p.panoId === u.searchParams.get( 'panoId' ) ) );
+		return new Promise( resolve => setTimeout( resolve, 20 ) ).then( () => r.respond( { status: 200, headers: cors, contentType: 'image/png', body: ONE_PIXEL } ) );
+
+	};
+	sv.on( 'request', r => void respond( r ) );
+	const warnings = [];
+	sv.on( 'console', m => { if ( [ 'warn', 'warning' ].includes( m.type() ) && m.text().startsWith( 'Street View' ) ) warnings.push( m.text() ); } );
+	const onFoot = ( lat, lng, heading = 272 ) => sv.evaluate( async ( lat, lng, heading ) => {
+
+		player.teleport( lat, lng );
+		await new Promise( r => { const t = setInterval( () => { if ( ! player.settling ) { clearInterval( t ); r(); } }, 100 ); } );
+		const ground = world.toLatLng( player.position ).height - player.heightAboveGround;
+		player.teleport( lat, lng, { height: ground + 1.7, heading, pitch: 0, mode: 'walk' } );
+
+	}, lat, lng, heading );
+	const slots = () => sv.evaluate( () => window.streetview?.debug.slots.filter( s => s.pano ).map( s => ( { pano: s.pano, strength: s.strength } ) ) ?? [] );
+	const credit = () => sv.evaluate( () => document.querySelector( '.credits .streetview-credit' )?.textContent || null );
+
+	await sv.goto( `${ process.env.TEST_URL ?? 'http://localhost:5173/' }?profile=desktop#${ LAT },${ LNG }`, { waitUntil: 'domcontentloaded' } );
+	await sv.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
+	await sv.evaluate( () => { localStorage.removeItem( 'walk-and-fly-streetview-session' ); localStorage.setItem( 'walk-and-fly-streetview', 'off' ); } );
+	// facing east, away from them: they stand on tiles out of view, which the renderer leaves out of the scene
+	await onFoot( LAT, LNG, 92 );
+	await sv.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+	await sv.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+	await sv.waitForFunction( () => window.streetview?.debug.slots.filter( s => s.strength > 0.99 ).length >= 6, { timeout: 60000 } ).catch( () => {} );
+
+	const shown = await slots();
+	const behind = await sv.evaluate( ( LAT, LNG ) => {
+
+		const street = world.groundBelow( player.position, 0.5 );
+		return { street, ground: window.streetview.groundAt( { lat: LAT, lng: LNG - 60 / 69400 }, street ) };
+
+	}, LAT, LNG );
+	check( 'Street View finds the ground under a panorama 60 m behind you, out of view', behind.street !== null && behind.ground !== null && Math.abs( behind.ground - behind.street ) < 3, behind );
+	check( 'Street View: six photos chosen and shown, nearest first', shown.length === 6 && shown.every( s => s.strength > 0.99 ) && shown[ 0 ].pano === 'pano0', shown );
+	const details = asked.filter( a => a.what === 'metadata' ).map( a => a.pano );
+	check( '…asking for the details of only 7 of the 11 found: the nearest, its two street neighbours, then four more', details.length === 7 && details[ 0 ] === 'pano0' && details.includes( 'pano9' ) && details.includes( 'pano10' ), details );
+	const tiles = asked.filter( a => a.what === 'tiles' );
+	const per = {};
+	for ( const t of tiles ) per[ t.pano ] = ( per[ t.pano ] ?? 0 ) + 1;
+	check( '…24 pieces a photo, the top row (sky) left out', Object.values( per ).every( n => n === 24 ) && ! tiles.some( t => t.y === 0 ), per );
+	const span = id => { const ts = tiles.filter( t => t.pano === id ).map( t => t.t ); return [ Math.min( ...ts ), Math.max( ...ts ) ]; };
+	const order = shown.map( s => s.pano ).sort( ( a, b ) => span( a )[ 0 ] - span( b )[ 0 ] );
+	check( '…downloaded one photo at a time, the nearest first', order[ 0 ] === 'pano0' && order.every( ( id, i ) => i === 0 || span( order[ i - 1 ] )[ 1 ] <= span( id )[ 0 ] ), order.map( id => span( id ).map( v => v - span( 'pano0' )[ 0 ] ) ) );
+	const line = await credit();
+	check( '…credited on screen with the year, the owner and a way to report a problem', ( line ?? '' ).startsWith( 'Street View 2024 · © 2024 Google' ) && await sv.evaluate( () => [ ...document.querySelectorAll( 'a' ) ].some( a => a.textContent === 'Report a problem' && a.href.includes( 'made-up' ) ) ), line );
+	check( '…and one session, remembered on the device for next time', asked.filter( a => a.what === 'session' ).length === 1 && await sv.evaluate( () => localStorage.getItem( 'walk-and-fly-streetview-session' )?.includes( 'made-up-session' ) ), asked.filter( a => a.what === 'session' ).length );
+
+	// switched off: the photos fade and the credit goes with them, nothing more is asked while walking on
+	await sv.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+	const before = asked.length;
+	await sleep( 1500 );
+	await onFoot( LAT, LNG - 25 / 69400 );
+	await sleep( 3000 );
+	check( 'Street View off: the photos fade out and the credit goes', ( await slots() ).every( s => s.strength === 0 ) && await credit() === null, await slots() );
+	check( '…and nothing more is asked of Google, walking on', asked.length === before, asked.slice( before ) );
+
+	// a fresh visit, switched on: the remembered session is used. Google then refuses for the day: asked once, then left alone
+	answer = 429;
+	await sv.evaluate( () => localStorage.setItem( 'walk-and-fly-streetview', 'on' ) );
+	await sv.reload( { waitUntil: 'domcontentloaded' } );
+	await sv.waitForFunction( () => window.player && ! player.settling, { timeout: 90000 } );
+	const reloaded = asked.length;
+	await onFoot( LAT, LNG );
+	await sv.waitForFunction( () => window.streetview && ! player.settling, { timeout: 90000 } );
+	await sleep( 3000 );
+	for ( const d of [ 10, 20, 30 ] ) { await onFoot( LAT, LNG - d / 69400 ); await sleep( 1500 ); }
+	const after = asked.slice( reloaded );
+	check( 'Street View on a fresh visit uses the remembered session', after.length > 0 && ! after.some( a => a.what === 'session' ) && after.every( a => a.session === 'made-up-session' ), after.map( a => a.what ) );
+	check( '…and when Google refuses for the day it is asked once, said once, and then left alone', after.length === 1 && warnings.filter( w => w.includes( 'refused' ) ).length === 1, { asked: after.map( a => a.what ), warnings } );
+	// the wait over (made to end now), photos come back without having to walk on
+	answer = 200;
+	await sv.evaluate( () => { window.streetview.refusedUntil = performance.now(); } );
+	await sv.waitForFunction( () => window.streetview.debug.slots.some( s => s.strength > 0.99 ), { timeout: 60000 } ).catch( () => {} );
+	check( '…and once the wait is over, the photos come, standing still', ( await slots() ).some( s => s.strength > 0.99 ), await slots() );
+	check( 'the Street View credit is a line of Google\'s own credits, above them', await sv.evaluate( () => {
+
+		const line = document.querySelector( '.credits .streetview-credit' );
+		return !! line && line.parentElement.firstElementChild === line && line.textContent.startsWith( 'Street View 2024' );
+
+	} ) );
+	await sv.close();
+
+}
+
 check( 'no errors on the page', errors.length === 0, errors );
 await browser.close();
 finish();

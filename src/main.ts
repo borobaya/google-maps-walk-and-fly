@@ -1,7 +1,8 @@
-import { MathUtils, PerspectiveCamera, Scene, Timer, Vector3, WebGLRenderer } from 'three';
+import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three';
 import { Atmosphere } from './atmosphere';
 import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
+import type { StreetView } from './streetview';
 import { quality } from './quality';
 import { addTouchControls } from './touch';
 import { World } from './world';
@@ -40,6 +41,8 @@ const session = {
 			try { store().removeItem( KEY_STORE ); } catch { /* storage is blocked */ }
 
 		}
+		// Street View's remembered session belongs to the old key's project (see SESSION_STORE in streetview.ts)
+		try { localStorage.removeItem( 'walk-and-fly-streetview-session' ); } catch { /* storage is blocked */ }
 		if ( ! key ) return;
 		try {
 
@@ -54,7 +57,7 @@ const session = {
 // where you were last time, kept in this browser for a week
 const LAST_STORE = 'walk-and-fly-last';
 const LAST_EXPIRY = 7 * 24 * 60 * 60 * 1000;
-/** PROTOTYPE: whether Street View is switched on, 'on' or 'off', kept in this browser. */
+/** Whether Street View is switched on, 'on' or 'off', kept in this browser. */
 const STREETVIEW_STORE = 'walk-and-fly-streetview';
 const builtIn = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -118,55 +121,46 @@ function start( key: string, typed: boolean ) {
 	atmosphere.onLoadFailed = () => hud.outdated();
 	hud.showClouds( atmosphere.cloudsEnabled );
 	addTouchControls( ui, player );
-	// PROTOTYPE: Street View projected onto the buildings. Development only: the built site leaves it
-	// out entirely. Switched by its button, off at first, and remembered on the device. Its code
-	// is fetched the first time it is switched on.
-	let streetview: { update( position: Vector3, settled: boolean, dt: number ): void, setEnabled( on: boolean ): void } | null = null;
+	// Street View photos projected onto the buildings near you while walking. Switched by its
+	// button, off at first, and remembered on the device. Its code is fetched only the first time
+	// it is switched on, so a visitor who never does pays nothing for it.
+	let streetview: StreetView | null = null;
 	let streetviewOn = false;
-	let button: HTMLButtonElement | null = null;
-	// found only if src/streetview.ts is here: it is kept out of git, so a fresh copy simply has no button
-	type StreetViewModule = { StreetView: new ( key: string, world: World, renderer: WebGLRenderer, scene: Scene ) => NonNullable<typeof streetview> };
-	const loadStreetView = import.meta.env.DEV ? import.meta.glob<StreetViewModule>( './streetview.ts' )[ './streetview.ts' ] : undefined;
 	const setStreetView = ( on: boolean ) => {
 
 		streetviewOn = on;
 		try { localStorage.setItem( STREETVIEW_STORE, on ? 'on' : 'off' ); } catch { /* not remembered: still switched */ }
 		if ( streetview ) streetview.setEnabled( on );
-		else if ( on && loadStreetView ) {
+		else if ( on ) {
 
-			loadStreetView().then( ( { StreetView } ) => {
+			import( './streetview' ).then( ( { StreetView } ) => {
 
 				streetview ??= new StreetView( key, world, renderer, scene );
 				streetview.setEnabled( streetviewOn );
+				Object.assign( window, { streetview } ); // for the tests
 
-			} ).catch( ( error: unknown ) => console.error( error ) );
-
-		}
-
-		if ( button ) {
-
-			button.textContent = on ? 'Street View: on' : 'Street View: off';
-			button.setAttribute( 'aria-pressed', String( on ) );
+			// its code could not be fetched: offline, it simply waits for the next switch-on; online,
+			// most likely the page was left open across a deploy, which a reload puts right. Anything
+			// else going wrong is only logged.
+			}, ( error: unknown ) => { if ( navigator.onLine ) hud.outdated(); else console.warn( 'Street View: offline, its code could not be fetched', error ); } )
+				.catch( ( error: unknown ) => console.error( 'Street View:', error ) );
 
 		}
 
-		return on;
+		button.textContent = on ? 'Street View: on' : 'Street View: off';
+		button.setAttribute( 'aria-pressed', String( on ) );
 
 	};
-	if ( import.meta.env.DEV && loadStreetView ) {
-
-		// its button joins the others in the Go to… box
-		button = document.createElement( 'button' );
-		button.type = 'button';
-		button.className = 'streetview';
-		button.title = 'Street View photos on the buildings near you, while walking';
-		button.addEventListener( 'click', () => setStreetView( ! streetviewOn ) );
-		ui.querySelector( '.goto' )?.append( button );
-		let stored: string | null = null;
-		try { stored = localStorage.getItem( STREETVIEW_STORE ); } catch { /* storage blocked: off */ }
-		setStreetView( stored === 'on' );
-
-	}
+	// its button joins the others in the Go to… box
+	const button = document.createElement( 'button' );
+	button.type = 'button';
+	button.className = 'streetview';
+	button.title = 'Street View photos on the buildings near you, while walking';
+	button.addEventListener( 'click', () => setStreetView( ! streetviewOn ) );
+	ui.querySelector( '.goto' )?.append( button );
+	let stored: string | null = null;
+	try { stored = localStorage.getItem( STREETVIEW_STORE ); } catch { /* storage blocked: off */ }
+	setStreetView( stored === 'on' );
 	// phones take the graphics away when memory runs low; say so instead of showing a frozen picture
 	canvas.addEventListener( 'webglcontextlost', e => {
 

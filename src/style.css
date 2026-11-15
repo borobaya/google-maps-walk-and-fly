@@ -210,7 +210,7 @@ body.looking #view { cursor: none; }
 	padding: 10px 14px;
 }
 .banner.show { display: block; }
-.banner button, .setup button, .goto .forget, .goto .clouds, .goto .fullscreen, .goto-open, .pad button {
+.banner button, .setup button, .goto .forget, .goto .clouds, .goto .streetview, .goto .fullscreen, .goto-open, .pad button {
 	font: inherit;
 	color: var(--text);
 	cursor: pointer;
@@ -321,11 +321,11 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 	.goto { max-height: calc(100dvh - 100px - var(--st) - 34px - var(--sb)); overflow-y: auto; }
 	/* row one: the text box and Go. Its basis is too wide to share the row with anything else */
 	.goto input { flex: 1 1 60%; width: auto; min-width: 0; }
-	/* row two: My location and Places side by side; row three: clouds and fullscreen */
+	/* row two: My location and Places side by side; then clouds, Street View and fullscreen */
 	.goto select { max-width: none; flex: 1 1 40%; min-width: 0; }
 	.goto .locate { flex: 1 1 40%; justify-content: center; }
 	.goto .locate span { display: inline; }
-	.goto .clouds, .goto .fullscreen { flex: 1; }
+	.goto .clouds, .goto .streetview, .goto .fullscreen { flex: 1; }
 	.goto .forget { flex: 1; flex-basis: auto; }
 	/* the hint would sit on top of the open box */
 	.goto.open ~ .hint { display: none; }

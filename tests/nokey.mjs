@@ -493,6 +493,76 @@ async function suite( engine ) {
 
 	}
 
+	// --- the Street View switch, as the demo serves it ----------------------------------------
+	// With a made-up key no ground loads, so nothing is looked up: what is checked is the switch,
+	// that its code arrives only when wanted, and that the page may stitch photos in a worker.
+	{
+
+		const p = await profile();
+		const page = await p.open( BUILT, { key: true } );
+		await started( page );
+		const fetched = [];
+		page.on( 'request', r => { if ( /streetview/i.test( r.url() ) ) fetched.push( r.url().split( '?' )[ 0 ] ); } );
+		const sv = () => page.evaluate( () => {
+
+			const b = document.querySelector( '.goto .streetview' );
+			return { label: b?.textContent, pressed: b?.getAttribute( 'aria-pressed' ), loaded: !! window.streetview, stored: localStorage.getItem( 'walk-and-fly-streetview' ) };
+
+		} );
+		let s = await sv();
+		check( 'Street View is offered, off to begin with, and its code is not fetched', s.label === 'Street View: off' && s.pressed === 'false' && ! s.loaded && fetched.length === 0, { ...s, fetched } );
+		await page.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+		await page.waitForFunction( () => window.streetview, null, { polling: 250, timeout: 20000 * SLOW } ).catch( () => {} );
+		s = await sv();
+		check( 'switched on, its code is fetched then, and the button says so', s.label === 'Street View: on' && s.pressed === 'true' && s.loaded && s.stored === 'on' && fetched.some( u => /\/assets\/streetview-[\w-]+\.js$/.test( u ) ), { ...s, fetched } );
+		check( '…and with no ground under it, nothing is asked of Google', ! fetched.some( u => u.includes( 'googleapis.com' ) ), fetched );
+		// two tiles of a made-up photo, stitched as a real one is: in a worker started from the page
+		const stitched = await page.evaluate( async () => {
+
+			const tile = document.createElement( 'canvas' );
+			tile.width = tile.height = 4;
+			tile.getContext( '2d' ).fillRect( 0, 0, 4, 4 );
+			const blob = await new Promise( resolve => tile.toBlob( resolve ) );
+			const job = window.streetview.stitch( 8, 4 );
+			job.add( blob, 0, 0 );
+			job.add( blob, 4, 0 );
+			const timeout = new Promise( resolve => setTimeout( () => resolve( null ), 10000 ) );
+			const done = await Promise.race( [ job.finish(), timeout ] );
+			return done && { width: done.bitmap.width, height: done.bitmap.height, broken: done.broken };
+
+		} );
+		check( 'photos can be stitched in a worker, which the page\'s policy allows', stitched?.width === 8 && stitched.height === 4 && stitched.broken === 0, stitched );
+		// where the worker breaks (or the browser has none that can draw), the page stitches them itself
+		const without = await page.evaluate( async () => {
+
+			window.streetview.dropWorker();
+			const tile = document.createElement( 'canvas' );
+			tile.width = tile.height = 4;
+			tile.getContext( '2d' ).fillRect( 0, 0, 4, 4 );
+			const job = window.streetview.stitch( 8, 4 );
+			job.add( await new Promise( resolve => tile.toBlob( resolve ) ), 0, 0 );
+			const done = await job.finish();
+			return { width: done.bitmap.width, height: done.bitmap.height, worker: !! window.streetview.stitcher };
+
+		} );
+		check( '…and without the worker, on the page itself', without.width === 8 && without.height === 4 && ! without.worker, without );
+		await page.reload();
+		await started( page );
+		await page.waitForFunction( () => window.streetview, null, { polling: 250, timeout: 20000 * SLOW } ).catch( () => {} );
+		s = await sv();
+		check( 'switched on is remembered on the device', s.label === 'Street View: on' && s.loaded, s );
+		await page.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+		s = await sv();
+		check( '…and so is switched off', s.label === 'Street View: off' && s.pressed === 'false' && s.stored === 'off', s );
+		// Street View's session belongs to the key's project: a new key starts afresh
+		await page.evaluate( () => localStorage.setItem( 'walk-and-fly-streetview-session', '{"session":"made-up","expiry":"9999999999"}' ) );
+		await page.evaluate( () => document.querySelector( '.goto .forget' ).click() );
+		await asksForKey( page );
+		check( 'Change API key forgets Street View\'s session too', await page.evaluate( () => localStorage.getItem( 'walk-and-fly-streetview-session' ) ) === null );
+		await p.close();
+
+	}
+
 	// --- a browser that cannot draw it at all ------------------------------------------------
 	{
 
