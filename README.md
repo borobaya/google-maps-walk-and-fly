@@ -72,6 +72,8 @@ Open <http://localhost:5173>. Your browser asks whether the app may use your loc
 
 Google bills Map Tiles usage to the owner of the key. There is a free monthly allowance, and normal exploring uses it slowly, but check [Google's pricing](https://developers.google.com/maps/billing-and-pricing/pricing) and consider setting a budget alert or a daily quota on the key. The Map Tiles API is not available to every billing region; if tiles fail to load, the app shows Google's error.
 
+**Street View costs more.** Each photo is downloaded in pieces: 24 requests on a computer, 8 on a phone. Every few metres walked also asks where the photos are and a few details about them. Street View requests are counted and billed on their own, with their own daily limit ("Street View Tiles requests per day" under the Map Tiles API's quotas in the Google Cloud Console). A long walk can use that up; when Google refuses, the app waits (ten minutes when it is the day's limit) and the buildings keep their own texture.
+
 ## Controls
 
 The right hand rests on the arrow keys, the left on W A S D, Space and C. The mouse is optional.
@@ -130,13 +132,25 @@ Where you begin, in order:
 3. Your own location, if you let the browser share it.
 4. The Tower of London.
 
-Your location and your last position stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
+Your location, your last position and whether Street View is on stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
 
 To search by place name as well, also enable the **Maps JavaScript API** and **Geocoding API** on your key (and add them to its API restrictions). Without them the box still accepts coordinates.
 
+### Street View on the buildings
+
+Up close, Google's 3D buildings are soft (see [Limits](#limits-worth-knowing)). The **Street View** button in the box at the top right fixes much of that while you walk: it lays Google's Street View photographs over the buildings near you, so walls within about 40 m show sharp photos instead of the blurry aerial texture.
+
+- **Off to begin with.** Your choice is remembered on the device. Its code is only downloaded the first time you switch it on.
+- **Only on foot.** It looks for photos as you walk, every few metres. Flying, it uses only the photos it already has.
+- **Nearest first.** Up to six photos are shown at once, the ones taken nearest you; each wall shows the nearest photo that could see it. They fade in as they arrive and out as you walk on.
+- **Credited on screen.** While any photo shows, a line above Google's credits gives the year it was taken, who took it, and a **Report a problem** link, as Street View requires.
+- **Kept only in memory.** Photos you have seen are kept while the page is open (30 on a computer, 10 on a phone), so walking back costs nothing, and switching off keeps them. Nothing is saved on the device except Street View's session (a token, not imagery), which lets your browser's own cache reuse what it may for as long as Google allows.
+
+It uses the same **Map Tiles API** as the 3D buildings, so a key that loads the city needs nothing more. But it uses noticeably more of the key's allowance; see [What it costs](#what-it-costs).
+
 ## Limits worth knowing
 
-- **Street level is rough.** Google builds this mesh from aerial photos. It looks great from the air; up close, buildings are soft and trees are solid lumps.
+- **Street level is rough.** Google builds this mesh from aerial photos. It looks great from the air; up close, buildings are soft and trees are solid lumps. [Street View](#street-view-on-the-buildings) sharpens the walls near you, but not trees, lamp posts or anything Street View's camera could not see, and only where Google has driven.
 - **Coverage is Google's.** Most large cities are in 3D. Elsewhere you get flat satellite-textured terrain, and a few sensitive sites are deliberately flattened.
 - **Phones run a lighter version.** There are no clouds and less of the world is kept in memory. The picture is drawn at the screen's full resolution, as on a computer, and lowered automatically if frames stay slow. How smooth it is depends on the phone.
 - **Typing a place with an iPhone held sideways is blind.** The keyboard fills the screen and covers the box. What you type still works; turning the phone upright lets you see it.
@@ -154,6 +168,7 @@ Built without a key (as the workflow does), the site asks each visitor for their
 - `src/world.ts` streams Google Photorealistic 3D Tiles with [3d-tiles-renderer](https://github.com/NASA-AMMOS/3DTilesRendererJS) and keeps your surroundings at the scene origin with +Y up, re-anchoring every kilometre so it works anywhere on Earth.
 - `src/player.ts` is the walk and fly controller. Collision is done by casting rays against the loaded tile meshes.
 - `src/atmosphere.ts` adds the sky and the volumetric clouds with [three-geospatial](https://github.com/takram-design-engineering/three-geospatial). The photos themselves are neither lit again nor hazed: `src/photo.ts` passes each one through in a form the last step turns back into its own colours, so they reach the screen exactly as Google supplied them.
+- `src/streetview.ts` lays Street View photos over the buildings: it finds the photos near you, downloads and stitches them in a worker, and adds a step to every tile's shader that paints each point from the nearest photo that could see it (judged from a depth map drawn from where each photo was taken).
 - `src/hud.ts` and `src/main.ts` hold the interface and the render loop.
 - `vite.config.ts` writes the page's content security policy: the hosts it may load from and talk to. A new host has to be added there, deliberately.
 
@@ -165,9 +180,9 @@ Three suites drive the app in a browser and check what it does. They need Google
 
 | Command | What it checks | Needs |
 | --- | --- | --- |
-| `npm test` ([tests/nokey.mjs](tests/nokey.mjs)) | the key screen and how the key is kept, that the key reaches only Google and the page refuses to send anything elsewhere, where you begin, links, the home-screen app, page zoom, and what a browser without 3D graphics is told; in Chrome and in WebKit, Safari's engine | nothing: it serves the app itself with no key and types a made-up one |
+| `npm test` ([tests/nokey.mjs](tests/nokey.mjs)) | the key screen and how the key is kept, that the key reaches only Google and the page refuses to send anything elsewhere, where you begin, links, the home-screen app, page zoom, the Street View switch (its code arriving only when wanted, and stitching photos in a worker), and what a browser without 3D graphics is told; in Chrome and in WebKit, Safari's engine | nothing: it serves the app itself with no key and types a made-up one |
 | `npm run test:touch` ([tests/touch.mjs](tests/touch.mjs)) | the phone and tablet controls, upright and sideways, the buttons, the place box, layouts at many sizes, and coping with a slow phone | `npm run dev` running, with your key |
-| `npm run test:desktop` ([tests/desktop.mjs](tests/desktop.mjs)) | the keyboard and mouse, walking the streets, the place box (including search by name, if your key allows it), and layouts at window sizes from 400 to 1920 wide | `npm run dev` running, with your key |
+| `npm run test:desktop` ([tests/desktop.mjs](tests/desktop.mjs)) | the keyboard and mouse, walking the streets, the place box (including search by name, if your key allows it), layouts at window sizes from 400 to 1920 wide, and Street View with made-up photos (which photos it picks, how it downloads them, the credit, switching off, and waiting when refused; none of it reaches Google) | `npm run dev` running, with your key |
 
 `npm test` runs in WebKit too once Playwright's copy is installed (`npx playwright-core install webkit`, once); `npm run test:chrome` and `npm run test:webkit` run one browser each. It runs in both on GitHub with every push and pull request ([workflow](.github/workflows/tests.yml)), drawing in software as GitHub's machines have no graphics chip (`SOFTWARE=1` does the same locally). The other two suites load real map tiles, billed to your key, so they are run by hand; they take a couple of minutes each and have only been run on a Mac.
 
