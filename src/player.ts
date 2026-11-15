@@ -89,8 +89,6 @@ export class Player {
 	clearance = 60;
 	/** Frames in flight where no ground could be found (tiles still loading); for diagnostics. */
 	groundMisses = 0;
-	/** Scroll-wheel multiplier for flying speed. */
-	flyScale = 1;
 	/** True while a mouse button or a finger is held on the scene to look around. */
 	dragging = false;
 	/**
@@ -284,7 +282,8 @@ export class Player {
 			z: unit( ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ) + t.z ),
 			x: unit( ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ) + t.x ),
 			y: unit( ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ) + t.y ),
-			fast: k.has( 'ShiftLeft' ) || k.has( 'ShiftRight' ) || t.fast,
+			// running and boosting are a long drag on a touch screen; the keyboard has no key for them
+			fast: t.fast,
 		};
 
 	}
@@ -506,7 +505,7 @@ export class Player {
 		// (the height is smoothed, so passing over a rooftop or a cliff edge does not jolt your speed)
 		this.speedHeight += ( this.heightAboveGround - this.speedHeight ) * ( 1 - Math.exp( - dt * 1.5 ) );
 		const base = MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
-		const top = base * this.flyScale * ( a.fast ? 3 : 1 );
+		const top = base * ( a.fast ? 3 : 1 );
 
 		// Straight up or down starts gently, for small adjustments, and builds to full flying
 		// speed the longer it is held, so a long climb or descent does not crawl.
@@ -602,7 +601,7 @@ export class Player {
 		}
 
 		// the view widens as you pick up speed
-		this.fovTarget = flyFov( this.heightAboveGround ) + 12 * MathUtils.clamp( velocity.length() / ( base * this.flyScale * 3 ), 0, 1 );
+		this.fovTarget = flyFov( this.heightAboveGround ) + 12 * MathUtils.clamp( velocity.length() / ( base * 3 ), 0, 1 );
 
 	}
 
@@ -844,12 +843,10 @@ export class Player {
 		window.addEventListener( 'blur', letGo );
 		document.addEventListener( 'visibilitychange', () => { if ( document.hidden ) letGo(); } );
 
-		dom.addEventListener( 'wheel', e => {
-
-			e.preventDefault();
-			this.flyScale = MathUtils.clamp( this.flyScale * Math.exp( - e.deltaY * 0.001 ), 0.2, 8 );
-
-		}, { passive: false } );
+		// the wheel does nothing over the scene, and a trackpad's pinch (sent as a wheel with Ctrl)
+		// zooms the page nowhere, over the panels and boxes included
+		dom.addEventListener( 'wheel', e => e.preventDefault(), { passive: false } );
+		window.addEventListener( 'wheel', e => { if ( e.ctrlKey ) e.preventDefault(); }, { passive: false } );
 
 	}
 

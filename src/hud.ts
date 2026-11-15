@@ -210,7 +210,7 @@ export class Hud {
 	private dial = el( 'div', 'dial', '<i>N</i><i>E</i><i>S</i><i>W</i>' );
 	private compass = el( 'div', 'compass' );
 	private note = el( 'div', 'note' );
-	/** A laptop's touchscreen has no K key; a phone has no clouds at all (too costly), so no button. */
+	/** Clouds are switched by this button; a phone has no clouds at all (too costly), so no button. */
 	private cloudsButton = quality.phone ? null : el( 'button', 'clouds' );
 	private nextSlow = 0;
 	private status = el( 'div', 'panel status' );
@@ -415,24 +415,22 @@ export class Hud {
 
 		} );
 
-		this.help.innerHTML = `
-			<div class="walk-only"><kbd>↑</kbd><kbd>↓</kbd> forward / back &nbsp;<kbd>←</kbd><kbd>→</kbd> turn</div>
-			<div class="fly-only"><kbd>↑</kbd><kbd>↓</kbd> fly forward / back &nbsp;<kbd>←</kbd><kbd>→</kbd> turn</div>
-			<div><kbd>A</kbd><kbd>D</kbd> sidestep &nbsp;<kbd>W</kbd><kbd>S</kbd> look up / down</div>
-			<div><kbd>Mouse</kbd> hold a button and drag to look</div>
-			<div class="walk-only"><kbd>Shift</kbd> run &nbsp;<kbd>Space</kbd> jump</div>
-			<div class="walk-only"><kbd>Space</kbd><kbd>Space</kbd> or <kbd>F</kbd> take off</div>
-			<div class="fly-only"><kbd>Shift</kbd> boost &nbsp;<kbd>Space</kbd> up &nbsp;<kbd>C</kbd> down &nbsp;<kbd>Scroll</kbd> speed</div>
-			<div class="fly-only"><kbd>Space</kbd><kbd>Space</kbd> or <kbd>F</kbd> drop &nbsp;·&nbsp; <kbd>C</kbd> to the ground lands</div>
-			<div><kbd>K</kbd> clouds &nbsp;<kbd>U</kbd> hide all &nbsp;<kbd>H</kbd> hide help</div>
-		`;
-		window.addEventListener( 'keydown', e => {
-
-			if ( e.code === 'KeyH' && ! ( e.target instanceof HTMLInputElement ) ) this.help.classList.toggle( 'hidden' );
-			// U hides the whole interface (the attribution stays), for an unobstructed view
-			if ( e.code === 'KeyU' && ! ( e.target instanceof HTMLInputElement ) ) document.body.classList.toggle( 'bare' );
-
-		} );
+		// One key (or pair) and one short action a row, for what you are doing now; the rest of the
+		// controls (Space twice, landing with C) are in the README.
+		const row = ( keys: string, action: string, only = '' ) =>
+			`<div${ only ? ` class="${ only }"` : '' }><span>${ keys.split( ' ' ).map( k => `<kbd>${ k }</kbd>` ).join( '' ) }</span><span>${ action }</span></div>`;
+		this.help.innerHTML = [
+			row( '↑ ↓', 'walk', 'walk-only' ),
+			row( '↑ ↓', 'fly', 'fly-only' ),
+			row( '← →', 'turn' ),
+			row( 'W S', 'look up / down' ),
+			row( 'A D', 'step aside' ),
+			row( 'Mouse&nbsp;drag', 'look around' ),
+			row( 'Space', 'jump', 'walk-only' ),
+			row( 'Space C', 'up / down', 'fly-only' ),
+			row( 'F', 'take off', 'walk-only' ),
+			row( 'F', 'land', 'fly-only' ),
+		].join( '' );
 
 		const credits = el( 'div', 'credits' );
 		// Google's own logo, as its attribution rules require; the data providers follow it

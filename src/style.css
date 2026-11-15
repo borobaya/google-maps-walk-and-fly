@@ -146,8 +146,10 @@ html, body {
 /* every button shows where the keyboard is */
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; gap: 6px; color: var(--muted); pointer-events: none; transition: opacity 0.4s; }
-.help.hidden { display: none; }
+.help { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); display: grid; grid-template-columns: auto auto; gap: 5px 10px; align-items: center; color: var(--muted); pointer-events: none; transition: opacity 0.4s; }
+/* each row's keys and action line up in two columns */
+.help > div { display: contents; }
+.help > div > span:first-child { text-align: right; }
 body[data-mode='walk'] .fly-only,
 body[data-mode='fly'] .walk-only { display: none; }
 kbd {
@@ -181,7 +183,7 @@ body.looking #view { cursor: none; }
 .hint.show { opacity: 1; }
 /* in a narrower window the hint would land on the help panel, so it sits above it */
 @media (max-width: 1160px) {
-	.hint { bottom: calc(240px + var(--sb)); }
+	.hint { bottom: calc(300px + var(--sb)); }
 }
 
 .credits {
@@ -218,7 +220,7 @@ body.looking #view { cursor: none; }
 	background: rgba(124, 196, 255, 0.22);
 }
 .banner button { display: block; margin-top: 8px; }
-.goto .clouds, .goto .fullscreen { display: none; }
+.goto .fullscreen { display: none; }
 .goto .locate { display: inline-flex; align-items: center; gap: 6px; }
 /* in the wide layout there is only room for the symbol */
 .goto .locate span { display: none; }
@@ -300,7 +302,7 @@ body[data-mode='walk'] .pad .down { display: block; visibility: hidden; }
 .pad button.held, .pad button:active { background: rgba(124, 196, 255, 0.45); }
 
 body.touch .help { display: none; }
-body.touch .goto .clouds, body.touch .goto .fullscreen { display: block; }
+body.touch .goto .fullscreen { display: block; }
 /* iOS zooms the page when a focused input's text is under 16px */
 body.touch .goto input, body.touch .goto select, body.touch .setup input, .setup form input { font-size: 16px; }
 /* thumbs cover the bottom of the screen, so the hint goes higher up: below the status panel,
@@ -356,7 +358,7 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 	.goto.open ~ .pad { display: none; }
 }
 
-/* U key: hide everything except the required attribution */
+/* for the tests' clean pictures: everything hidden except the required attribution */
 body.bare #ui > :not(.credits):not(.banner) { display: none; }
 
 /* asked for less motion: nothing fades or slides (the view itself keeps still too; see player.ts) */

@@ -10,6 +10,10 @@ Google Maps' own 3D view keeps you in a bird's-eye orbit. This app loads the sam
 
 <sub>A 15-second flight recorded in the app. [Full-quality video](docs/flythrough.mp4).</sub>
 
+![Walking across Westminster Bridge towards Big Ben, then turning to the Houses of Parliament](docs/walkthrough.webp)
+
+<sub>A 15-second walk recorded in the app. [Full-quality video](docs/walkthrough.mp4).</sub>
+
 ![The City of London and the Tower of London from the air](docs/london-aerial.jpg)
 
 | | |
@@ -33,7 +37,7 @@ The key is sent to Google and nowhere else: the page's security policy lets it t
 
 - [Node.js](https://nodejs.org) 22.12 or newer.
 - A Google Maps Platform API key. Each person uses their own; there is no shared key.
-- A reasonably recent computer, phone or tablet. The clouds are demanding; press `K` to turn them off (phones and tablets go without them).
+- A reasonably recent computer, phone or tablet. The clouds are demanding; switch them off with the Clouds button at the top right (phones and tablets go without them).
 
 ### 1. Get a Google API key
 
@@ -79,14 +83,11 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 | A D | sidestep | sidestep |
 | W S | look up / down | pitch up / down |
 | Mouse, button held | drag to look around | drag to look around |
-| Shift | run | boost |
 | Space | jump | climb; faster the longer you hold |
 | C | – | descend, faster the longer you hold; touching the ground lands you |
 | Space twice, or F | take off | drop to the ground |
-| Scroll | – | change flying speed |
-| K | clouds on / off (not on phones and tablets) | same |
-| H | hide / show the help panel | same |
-| U | hide / show the whole interface | same |
+
+The Clouds button in the box at the top right switches the clouds on and off; in a narrow window that box is folded behind the Go to… button. Phones and tablets have no clouds.
 
 Flying speed grows with height, so you can thread streets down low and cross a city up high.
 

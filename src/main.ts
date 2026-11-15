@@ -1,4 +1,4 @@
-import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three';
+import { MathUtils, PerspectiveCamera, Scene, Timer, Vector3, WebGLRenderer } from 'three';
 import { Atmosphere } from './atmosphere';
 import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
@@ -54,6 +54,8 @@ const session = {
 // where you were last time, kept in this browser for a week
 const LAST_STORE = 'walk-and-fly-last';
 const LAST_EXPIRY = 7 * 24 * 60 * 60 * 1000;
+/** PROTOTYPE: whether Street View is switched on, 'on' or 'off', kept in this browser. */
+const STREETVIEW_STORE = 'walk-and-fly-streetview';
 const builtIn = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
 if ( builtIn ) start( builtIn, false );
@@ -116,6 +118,55 @@ function start( key: string, typed: boolean ) {
 	atmosphere.onLoadFailed = () => hud.outdated();
 	hud.showClouds( atmosphere.cloudsEnabled );
 	addTouchControls( ui, player );
+	// PROTOTYPE: Street View projected onto the buildings. Development only: the built site leaves it
+	// out entirely. Switched by its button, off at first, and remembered on the device. Its code
+	// is fetched the first time it is switched on.
+	let streetview: { update( position: Vector3, settled: boolean, dt: number ): void, setEnabled( on: boolean ): void } | null = null;
+	let streetviewOn = false;
+	let button: HTMLButtonElement | null = null;
+	// found only if src/streetview.ts is here: it is kept out of git, so a fresh copy simply has no button
+	type StreetViewModule = { StreetView: new ( key: string, world: World, renderer: WebGLRenderer, scene: Scene ) => NonNullable<typeof streetview> };
+	const loadStreetView = import.meta.env.DEV ? import.meta.glob<StreetViewModule>( './streetview.ts' )[ './streetview.ts' ] : undefined;
+	const setStreetView = ( on: boolean ) => {
+
+		streetviewOn = on;
+		try { localStorage.setItem( STREETVIEW_STORE, on ? 'on' : 'off' ); } catch { /* not remembered: still switched */ }
+		if ( streetview ) streetview.setEnabled( on );
+		else if ( on && loadStreetView ) {
+
+			loadStreetView().then( ( { StreetView } ) => {
+
+				streetview ??= new StreetView( key, world, renderer, scene );
+				streetview.setEnabled( streetviewOn );
+
+			} ).catch( ( error: unknown ) => console.error( error ) );
+
+		}
+
+		if ( button ) {
+
+			button.textContent = on ? 'Street View: on' : 'Street View: off';
+			button.setAttribute( 'aria-pressed', String( on ) );
+
+		}
+
+		return on;
+
+	};
+	if ( import.meta.env.DEV && loadStreetView ) {
+
+		// its button joins the others in the Go to… box
+		button = document.createElement( 'button' );
+		button.type = 'button';
+		button.className = 'streetview';
+		button.title = 'Street View photos on the buildings near you, while walking';
+		button.addEventListener( 'click', () => setStreetView( ! streetviewOn ) );
+		ui.querySelector( '.goto' )?.append( button );
+		let stored: string | null = null;
+		try { stored = localStorage.getItem( STREETVIEW_STORE ); } catch { /* storage blocked: off */ }
+		setStreetView( stored === 'on' );
+
+	}
 	// phones take the graphics away when memory runs low; say so instead of showing a frozen picture
 	canvas.addEventListener( 'webglcontextlost', e => {
 
@@ -242,12 +293,6 @@ function start( key: string, typed: boolean ) {
 	setInterval( remember, 2000 );
 	window.addEventListener( 'pagehide', remember );
 
-	window.addEventListener( 'keydown', e => {
-
-		// phones and tablets go without clouds, even with a keyboard attached
-		if ( e.code === 'KeyK' && ! e.repeat && ! quality.phone && ! ( e.target instanceof HTMLInputElement ) ) hud.showClouds( atmosphere.toggleClouds() );
-
-	} );
 
 	// If frames stay slow, draw fewer pixels, one step at a time.
 	// Arriving somewhere is not counted: those hitches are not the graphics chip's doing. Tiles
@@ -305,6 +350,7 @@ function start( key: string, typed: boolean ) {
 		if ( ! placed ) return hud.update( time ); // still finding out where to begin
 
 		player.update( dt );
+		streetview?.update( player.position, ! player.settling && player.mode === 'walk', dt );
 
 		// see to the horizon from wherever we are, without wasting depth precision
 		const h = player.settling ? 1500 : Math.max( player.heightAboveGround, 2 );

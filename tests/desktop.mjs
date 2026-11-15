@@ -20,7 +20,7 @@ page.on( 'request', r => { const url = new URL( r.url() ); if ( url.protocol.sta
 
 const state = () => page.evaluate( () => ( {
 	mode: player.mode, x: player.position.x, y: player.position.y, z: player.position.z,
-	yaw: player.yaw, pitch: player.pitch, speed: player.speed, agl: player.heightAboveGround, flyScale: player.flyScale,
+	yaw: player.yaw, pitch: player.pitch, speed: player.speed, agl: player.heightAboveGround,
 } ) );
 /** Holds the keys down for `ms`, then reports how things changed. */
 const hold = async ( keys, ms ) => {
@@ -111,10 +111,6 @@ let r = await hold( [ 'ArrowUp' ], 1200 );
 check( '↑ flies forward', r.moved > 5, + r.moved.toFixed( 1 ) );
 await sleep( 1500 );
 check( 'letting go stops you', ( await state() ).speed < 1, + ( await state() ).speed.toFixed( 2 ) );
-const plain = r.moved;
-r = await hold( [ 'ShiftLeft', 'ArrowUp' ], 1200 );
-check( 'Shift boosts', r.moved > plain * 1.8, [ + plain.toFixed( 1 ), + r.moved.toFixed( 1 ) ] );
-await sleep( 1500 );
 r = await hold( [ 'ArrowLeft' ], 600 );
 const left = r.turned;
 r = await hold( [ 'ArrowRight' ], 600 );
@@ -135,19 +131,26 @@ r = await hold( [ 'KeyC' ], 1200 );
 check( 'C descends', r.rose < - 2, + r.rose.toFixed( 1 ) );
 await sleep( 800 );
 
-// the scroll wheel sets flying speed
+// the scroll wheel does nothing: no speed change, and neither it nor a trackpad pinch (Ctrl + wheel) scrolls or zooms the page
 {
 
-	const before = ( await state() ).flyScale;
 	await page.mouse.move( 640, 400 );
 	await page.mouse.wheel( { deltaY: - 400 } );
-	await sleep( 100 );
-	const faster = ( await state() ).flyScale;
-	await page.mouse.wheel( { deltaY: 800 } );
-	await sleep( 100 );
-	const slower = ( await state() ).flyScale;
-	check( 'scrolling up flies faster, down slower', faster > before * 1.3 && slower < faster / 1.8, [ before, + faster.toFixed( 2 ), + slower.toFixed( 2 ) ] );
-	await page.evaluate( () => { player.flyScale = 1; } );
+	await page.keyboard.down( 'Control' );
+	await page.mouse.wheel( { deltaY: - 400 } );
+	await page.keyboard.up( 'Control' );
+	await sleep( 200 );
+	check( 'the wheel does not scroll the page', await page.evaluate( () => scrollY === 0 ) );
+	// a real pinch's zoom cannot be seen from a test, so check that every wheel over the scene, and a
+	// pinch over a panel as well, is held back from the browser (left alone, it would scroll or zoom)
+	const held = await page.evaluate( () => {
+
+		const wheel = ( target, ctrlKey ) => ! target.dispatchEvent( new WheelEvent( 'wheel', { deltaY: - 100, ctrlKey, bubbles: true, cancelable: true } ) );
+		const canvas = document.querySelector( 'canvas' ), panel = document.querySelector( '.goto' );
+		return { scene: wheel( canvas, false ), scenePinch: wheel( canvas, true ), panelPinch: wheel( panel, true ), panelWheel: wheel( panel, false ) };
+
+	} );
+	check( 'the wheel and a pinch are held back over the scene, and a pinch over a panel too', held.scene && held.scenePinch && held.panelPinch && ! held.panelWheel, held );
 
 }
 
@@ -219,10 +222,7 @@ check( 'F drops you to the street', await page.evaluate( () => player.mode === '
 await sleep( 1500 );
 r = await hold( [ 'ArrowUp' ], 2000 );
 const walk = r.moved / 2;
-await sleep( 800 );
-r = await hold( [ 'ShiftLeft', 'ArrowUp' ], 2000 );
-const run = r.moved / 2;
-check( '↑ walks (4 m/s), and Shift runs (11 m/s)', walk > 2.5 && walk < 4.6 && run > 8, [ + walk.toFixed( 2 ), + run.toFixed( 2 ) ] );
+check( '↑ walks (4 m/s)', walk > 2.5 && walk < 4.6, + walk.toFixed( 2 ) );
 await sleep( 800 );
 {
 
@@ -241,8 +241,9 @@ await sleep( 800 );
 
 }
 
-// walk the streets for a while, turning, and watch that no wall comes closer than the near plane
-// (it would be seen through) and that you never lose the ground
+// run the streets for a while, turning, and watch that no wall comes closer than the near plane
+// (it would be seen through) and that you never lose the ground. Running is a long drag on a
+// touch screen, which has no key; the test sets it directly, at the 11 m/s a thumb can reach.
 {
 
 	await page.evaluate( () => {
@@ -263,7 +264,7 @@ await sleep( 800 );
 		tick();
 
 	} );
-	await page.keyboard.down( 'ShiftLeft' );
+	await page.evaluate( () => { player.stick.fast = true; } );
 	await page.keyboard.down( 'ArrowUp' );
 	for ( let i = 0; i < 6; i ++ ) {
 
@@ -276,9 +277,8 @@ await sleep( 800 );
 	}
 
 	await page.keyboard.up( 'ArrowUp' );
-	await page.keyboard.up( 'ShiftLeft' );
-	const w = await page.evaluate( () => { const w = window.__walk; window.__walk = null; return { ...w, agl: player.heightAboveGround }; } );
-	check( 'a long walk never sees through a wall or loses the ground', w.frames > 100 && w.worst <= 0.5 && w.lost === 0 && ! w.flew && w.agl < 0.1, w );
+	const w = await page.evaluate( () => { player.stick.fast = false; const w = window.__walk; window.__walk = null; return { ...w, agl: player.heightAboveGround }; } );
+	check( 'a long run never sees through a wall or loses the ground', w.frames > 100 && w.worst <= 0.5 && w.lost === 0 && ! w.flew && w.agl < 0.1, w );
 
 }
 
@@ -292,15 +292,8 @@ await page.keyboard.down( 'Space' );
 await sleep( 1500 );
 await page.keyboard.up( 'Space' );
 
-// --- H, U ---------------------------------------------------------------------------
-await page.keyboard.press( 'KeyH' );
-const helpGone = ! await shown( '.help' );
-await page.keyboard.press( 'KeyH' );
-check( 'H hides and shows the help panel', helpGone && await shown( '.help' ) );
-await page.keyboard.press( 'KeyU' );
-const bare = await page.evaluate( () => getComputedStyle( document.querySelector( '.status' ) ).display === 'none' || getComputedStyle( document.getElementById( 'ui' ) ).display === 'none' || document.body.classList.contains( 'bare' ) );
-await page.keyboard.press( 'KeyU' );
-check( 'U hides and shows the whole interface', bare && ! await page.evaluate( () => document.body.classList.contains( 'bare' ) ) );
+// --- the clouds switch is a button on a computer too (no key) ---------------------
+check( 'the clouds switch shows on a computer', await shown( '.goto .clouds' ) );
 
 // --- the place box, by mouse and keyboard -------------------------------------------------
 await page.setViewport( { width: 800, height: 600 } ); // narrow enough that the box folds away
@@ -354,7 +347,7 @@ await sleep( 300 );
 
 }
 
-// asked for less motion: a boosted turn in the air neither banks nor widens the view
+// asked for less motion: a fast turn in the air neither banks nor widens the view
 {
 
 	const turn = async () => {
@@ -369,10 +362,10 @@ await sleep( 300 );
 		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
 		await sleep( 2500 );
 		await page.mouse.click( 400, 400 );
-		await page.keyboard.down( 'ShiftLeft' ); await page.keyboard.down( 'ArrowUp' ); await page.keyboard.down( 'ArrowLeft' );
+		await page.keyboard.down( 'ArrowUp' ); await page.keyboard.down( 'ArrowLeft' );
 		await sleep( 1500 );
 		const s = await page.evaluate( () => ( { mode: player.mode, roll: + player.camera.rotation.z.toFixed( 3 ), fov: + player.fov.toFixed( 1 ) } ) );
-		await page.keyboard.up( 'ArrowLeft' ); await page.keyboard.up( 'ArrowUp' ); await page.keyboard.up( 'ShiftLeft' );
+		await page.keyboard.up( 'ArrowLeft' ); await page.keyboard.up( 'ArrowUp' );
 		await sleep( 2500 );
 		// how much wider the view was at speed than once stopped, at the same spot
 		s.widened = + ( s.fov - await page.evaluate( () => player.fov ) ).toFixed( 1 );
@@ -384,7 +377,7 @@ await sleep( 300 );
 	await page.emulateMediaFeatures( [ { name: 'prefers-reduced-motion', value: 'reduce' } ] );
 	const calm = await turn();
 	await page.emulateMediaFeatures( [] );
-	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.widened > 4 && Math.abs( calm.roll ) < 0.01 && Math.abs( calm.widened ) < 1, { usual, calm } );
+	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.widened > 2 && Math.abs( calm.roll ) < 0.01 && Math.abs( calm.widened ) < 1, { usual, calm } );
 
 }
 
@@ -392,26 +385,28 @@ const sky = await page.evaluate( () => ( { clouds: atmosphere.cloudsEnabled, noi
 check( 'the clouds\' noise texture comes from the site itself', sky.clouds && sky.noise, sky );
 check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => GOOGLE.includes( h ) ), [ ...hosts ] );
 // the view angle never jumps, nor does the speed at which it changes: through taking off,
-// boosting, stopping and landing it moves like a spring that sets off and arrives gently
+// flying, stopping and landing it moves like a spring that sets off and arrives gently
 {
 
 	await page.evaluate( () => { window.__trace = []; const tick = t => { if ( ! window.__trace ) return; window.__trace.push( [ t, player.fov ] ); requestAnimationFrame( tick ); }; requestAnimationFrame( tick ); } );
 	await page.mouse.click( 400, 400 );
 	if ( ( await state() ).mode !== 'fly' ) await page.keyboard.press( 'KeyF' );
-	await page.keyboard.down( 'ShiftLeft' ); await page.keyboard.down( 'ArrowUp' ); await sleep( 2000 );
-	await page.keyboard.up( 'ArrowUp' ); await page.keyboard.up( 'ShiftLeft' ); await sleep( 1500 );
+	await page.keyboard.down( 'ArrowUp' ); await sleep( 2000 );
+	await page.keyboard.up( 'ArrowUp' ); await sleep( 1500 );
 	await page.keyboard.press( 'KeyF' ); await sleep( 3500 ); // land
 	await page.keyboard.press( 'KeyF' ); await sleep( 2000 ); // and take off again
 	const smooth = await page.evaluate( () => {
 
 		const t = window.__trace; window.__trace = null;
+		// the rate of change at the middle of each frame, then how fast that rate changes, per second:
+		// per frame, one slow frame (tiles decoding) would look like a kick when it is not
 		const rates = [];
-		for ( let i = 1; i < t.length; i ++ ) { const dt = ( t[ i ][ 0 ] - t[ i - 1 ][ 0 ] ) / 1000; if ( dt > 0 ) rates.push( ( t[ i ][ 1 ] - t[ i - 1 ][ 1 ] ) / dt ); }
-		const kicks = rates.slice( 1 ).map( ( r, i ) => Math.abs( r - rates[ i ] ) );
-		return { frames: t.length, range: + ( Math.max( ...t.map( x => x[ 1 ] ) ) - Math.min( ...t.map( x => x[ 1 ] ) ) ).toFixed( 1 ), fastest: + Math.max( ...rates.map( Math.abs ) ).toFixed( 1 ), biggestKick: + Math.max( ...kicks ).toFixed( 1 ) };
+		for ( let i = 1; i < t.length; i ++ ) { const dt = ( t[ i ][ 0 ] - t[ i - 1 ][ 0 ] ) / 1000; if ( dt > 0 ) rates.push( [ ( t[ i ][ 0 ] + t[ i - 1 ][ 0 ] ) / 2000, ( t[ i ][ 1 ] - t[ i - 1 ][ 1 ] ) / dt ] ); }
+		const kicks = rates.slice( 1 ).map( ( r, i ) => Math.abs( r[ 1 ] - rates[ i ][ 1 ] ) / ( r[ 0 ] - rates[ i ][ 0 ] ) );
+		return { frames: t.length, range: + ( Math.max( ...t.map( x => x[ 1 ] ) ) - Math.min( ...t.map( x => x[ 1 ] ) ) ).toFixed( 1 ), fastest: + Math.max( ...rates.map( r => Math.abs( r[ 1 ] ) ) ).toFixed( 1 ), biggestKick: Math.round( Math.max( ...kicks ) ) };
 
 	} );
-	check( 'the view angle changes smoothly: no jump in it, nor in how fast it changes', smooth.range > 5 && smooth.fastest < 40 && smooth.biggestKick < 10, smooth );
+	check( 'the view angle changes smoothly: no jump in it, nor in how fast it changes', smooth.range > 5 && smooth.fastest < 40 && smooth.biggestKick < 400, smooth );
 
 }
 

@@ -16,7 +16,7 @@ export interface Quality {
 	cacheMax: number;
 	/** Tiles decoded at once. */
 	parseJobs: number;
-	/** Screen-space error targets: lower is finer. */
+	/** Screen-space error targets, in CSS pixels: lower is finer. */
 	walkError: number;
 	flyError: number;
 }
@@ -28,6 +28,9 @@ const forced = new URLSearchParams( location.search ).get( 'profile' );
 // "the main pointer is a finger" covers phones and tablets (an iPad calls itself a Mac),
 // but not a laptop that merely has a touchscreen
 const phone = forced ? forced === 'phone' : matchMedia( '(pointer: coarse)' ).matches;
+
+/** Chrome's rounded figure for the device's memory, in GB (at most 8); undefined elsewhere. */
+const lowMemory = ( ( navigator as Navigator & { deviceMemory?: number } ).deviceMemory ?? 8 ) < 8;
 
 export const quality: Quality = phone ? {
 	phone: true,
@@ -44,11 +47,15 @@ export const quality: Quality = phone ? {
 	pixelRatio: Infinity,
 	minPixelRatio: 2,
 	clouds: true,
-	cacheMin: 512 * MB,
-	cacheMax: 768 * MB,
+	// Twice the detail in the air of before (6 rather than 12 pixels of error), which brought the
+	// building edges up to Google Maps' own; the larger tile memory keeps those finer tiles. A
+	// computer that says it has under 8 GB (Chrome and Edge tell; Safari and Firefox do not) keeps
+	// the earlier, smaller memory: the same detail, fetched again more often.
+	cacheMin: lowMemory ? 512 * MB : 1024 * MB,
+	cacheMax: lowMemory ? 768 * MB : 1536 * MB,
 	parseJobs: 10,
 	walkError: 6,
-	flyError: 12,
+	flyError: 6,
 };
 
 /**
