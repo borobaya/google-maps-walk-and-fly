@@ -190,11 +190,16 @@ export function showUnsupported( root: HTMLElement ) {
 /** How long after the last click, touch or key press the status panel comes back, milliseconds. */
 const QUIET_AFTER = 10000;
 
+/** How long the compass is held to show or hide the debug figures, in ms. */
+const COMPASS_HOLD = 1000;
+
 export class Hud {
 
 	onGoTo: ( ( lat: number, lng: number ) => void ) | null = null;
 	/** Switches the clouds and reports whether they are now on. */
 	onClouds: ( () => boolean ) | null = null;
+	/** Pressing and holding the compass (finger or mouse): shows or hides the debug figures. */
+	onCompassHold: ( () => void ) | null = null;
 	/** True while waiting for the browser to say where the visitor is. */
 	locating = false;
 
@@ -444,6 +449,26 @@ export class Hud {
 		this.compass.setAttribute( 'aria-label', 'Facing north' ); // kept up to date in `update`
 		this.dial.setAttribute( 'aria-hidden', 'true' );
 		this.compass.append( this.dial );
+		// Held for a second, by finger or mouse, it shows or hides the debug figures: the same as P,
+		// for a phone and for the home-screen app. The compass itself lets touches through to the
+		// scene (a drag that starts there still steers), so the press is found by where it lands.
+		// Moving more than the compass's own radius from where it pressed, or letting go sooner, does
+		// nothing.
+		let holding = 0, fromX = 0, fromY = 0;
+		const letGo = () => { clearTimeout( holding ); holding = 0; this.compass.classList.remove( 'holding' ); };
+		window.addEventListener( 'pointerdown', e => {
+
+			letGo();
+			if ( e.button !== 0 ) return;
+			const c = this.compass.getBoundingClientRect();
+			if ( Math.hypot( e.clientX - ( c.x + c.width / 2 ), e.clientY - ( c.y + c.height / 2 ) ) > c.width / 2 ) return;
+			fromX = e.clientX; fromY = e.clientY;
+			this.compass.classList.add( 'holding' );
+			holding = window.setTimeout( () => { letGo(); this.onCompassHold?.(); }, COMPASS_HOLD );
+
+		}, { capture: true, passive: true } );
+		window.addEventListener( 'pointermove', e => { if ( holding && Math.hypot( e.clientX - fromX, e.clientY - fromY ) > 24 ) letGo(); }, { capture: true, passive: true } );
+		for ( const type of [ 'pointerup', 'pointercancel' ] ) window.addEventListener( type, letGo, { capture: true, passive: true } );
 		root.append( this.compass, status, open, go, this.help, this.hint, credits, this.banner );
 
 	}

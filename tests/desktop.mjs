@@ -44,6 +44,108 @@ await loaded( page );
 const desk = await page.evaluate( () => ( { touch: document.body.classList.contains( 'touch' ), clouds: atmosphere.cloudsEnabled } ) );
 check( 'laptop: full quality with clouds, the help panel and no touch buttons', ! desk.touch && desk.clouds && await shown( '.help' ) && ! await shown( '.pad' ), desk );
 
+// P shows and hides the debug figures above the credits; a "p" typed into the place box does not
+{
+
+	const figures = () => page.evaluate( () => {
+
+		const panel = document.querySelector( '.credits .debug' );
+		return panel && ! panel.hidden ? [ ...panel.children ].map( d => d.textContent ) : null;
+
+	} );
+	await page.mouse.click( 640, 400 );
+	await page.keyboard.press( 'KeyP' );
+	await page.waitForFunction( () => document.querySelector( '.credits .debug' )?.children.length > 0, { timeout: 15000 } ).catch( () => {} );
+	await sleep( 1200 ); // a second of frames to count
+	const on = await figures();
+	check( 'P shows the debug figures above the credits', !! on && /\d+ fps/.test( on[ 0 ] ) && on.some( l => l.startsWith( '3D tiles:' ) ) && on.some( l => /^Asked of Google this visit: [\d,]{4,} 3D tiles/.test( l ) )
+		&& await page.evaluate( () => document.querySelector( '.credits' ).firstElementChild.classList.contains( 'debug' ) ), on );
+	// today's count, in this browser, against a limit given by tapping the last line
+	check( '…with today\'s count in this browser, and the limit not set yet', !! on && on.some( l => /^Today, in this browser: [\d,]{4,} 3D tiles/.test( l ) ) && on.at( - 1 ).startsWith( 'Photo pieces allowed a day: not set' ), on );
+	page.once( 'dialog', d => void d.accept( '10,000' ) );
+	await page.click( '.credits .debug div:last-child' );
+	await sleep( 900 );
+	const limited = await figures();
+	await sleep( 2500 ); // saved every two seconds
+	const stored = await page.evaluate( () => JSON.parse( localStorage.getItem( 'walk-and-fly-requests-today' ) ?? 'null' ) );
+	check( '…tapping the last line sets the daily limit, which is then shown against the count', !! limited && /^Photo pieces today: [\d,]+ of 10,000 allowed \(\d+%\)/.test( limited.at( - 1 ) ) && await page.evaluate( () => localStorage.getItem( 'walk-and-fly-photo-piece-limit' ) ) === '10000', limited );
+	check( '…and today\'s count is kept in the browser, by Pacific day, with no key in it', !! stored && /^\d{4}-\d\d-\d\d$/.test( stored.day ) && stored.counts.tiles > 1000 && ! JSON.stringify( stored ).includes( 'key' ), stored );
+	await page.keyboard.press( 'KeyP' );
+	const off = await figures();
+	// pressing P was using the keys, so the box has faded and lets clicks through: focus it directly
+	await page.$eval( '.goto input', e => e.focus() );
+	await page.keyboard.type( 'p' );
+	const typed = await figures();
+	await page.$eval( '.goto input', e => { e.value = ''; e.blur(); } );
+	check( '…P again hides them, and a "p" typed as part of a place name does not', off === null && typed === null, { off, typed } );
+	// the mouse held on the compass for a second does the same; a click does nothing
+	const c = await page.$eval( '.compass', e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; } );
+	await page.mouse.click( c.x, c.y );
+	await sleep( 1300 );
+	const clicked = await figures();
+	await page.mouse.move( c.x, c.y ); await page.mouse.down(); await sleep( 1300 ); await page.mouse.up();
+	const held = await figures();
+	await page.mouse.move( c.x, c.y ); await page.mouse.down(); await sleep( 1300 ); await page.mouse.up();
+	const again = await figures();
+	check( '…holding the mouse on the compass a second shows them, and again hides them; a click does nothing', clicked === null && held !== null && again === null, { clicked, held, again } );
+
+}
+
+// a two-finger swipe over the scene moves you (down: forward, up: back); a double click goes part of the way to what was clicked
+{
+
+	const across = ( a, b, yaw ) => ( {
+		ahead: ( b.x - a.x ) * - Math.sin( yaw ) + ( b.z - a.z ) * - Math.cos( yaw ),
+		right: ( b.x - a.x ) * Math.cos( yaw ) + ( b.z - a.z ) * - Math.sin( yaw ),
+		total: Math.hypot( b.x - a.x, b.z - a.z ),
+	} );
+	const swipe = async deltaY => { for ( let i = 0; i < 12; i ++ ) { await page.mouse.wheel( { deltaY } ); await sleep( 50 ); } await sleep( 900 ); };
+	await page.mouse.move( 640, 400 );
+	const s0 = await state();
+	await swipe( 40 );
+	const s1 = await state();
+	await swipe( - 40 );
+	const s2 = await state();
+	const fwd = across( s0, s1, s0.yaw ), back = across( s1, s2, s0.yaw );
+	check( 'a two-finger swipe up moves you forward, and down moves you back', fwd.ahead > 3 && back.ahead < - 1.5 && Math.abs( fwd.right ) < 0.5, { fwd, back } );
+	// a harder swipe goes faster still
+	await sleep( 1000 );
+	const h0 = await state();
+	await swipe( 100 );
+	const hard = across( h0, await state(), h0.yaw );
+	check( '…and a harder swipe goes faster still', hard.ahead > fwd.ahead * 1.5, { hard, fwd } );
+	await sleep( 1500 );
+	const still = await state();
+	const sideways = async deltaX => { for ( let i = 0; i < 12; i ++ ) { await page.mouse.wheel( { deltaX } ); await sleep( 50 ); } await sleep( 900 ); };
+	await sideways( - 40 );
+	const s3 = await state();
+	await sideways( 40 );
+	const s4 = await state();
+	const right = across( still, s3, still.yaw ), left = across( s3, s4, still.yaw );
+	check( '…a swipe right steps aside to the right, and left steps back', right.right > 3 && left.right < - 3 && Math.abs( right.ahead ) < 0.5, { right, left } );
+	// fingers wander: a tiny sideways drift in a swipe down is not a step aside
+	await sleep( 800 );
+	const d0 = await state();
+	for ( let i = 0; i < 12; i ++ ) { await page.mouse.wheel( { deltaY: 40, deltaX: 6 } ); await sleep( 50 ); }
+	await sleep( 900 );
+	const drift = across( d0, await state(), d0.yaw );
+	check( '…and a stray bit of sideways in a swipe down is ignored', drift.ahead > 3 && Math.abs( drift.right ) < 0.5, drift );
+
+	await sleep( 1500 );
+	const before = await state();
+	await page.mouse.click( 1000, 360 );
+	await sleep( 1000 );
+	const single = across( before, await state(), before.yaw );
+	check( 'a single click moves nothing', single.total < 0.5, single );
+	await page.mouse.click( 1000, 360, { count: 2 } );
+	await sleep( 5000 );
+	const after = await state();
+	const gone = across( before, after, before.yaw );
+	check( 'a double click goes part of the way toward the spot clicked: to the right of where you face', gone.right > 3 && gone.total > 3, gone );
+	check( '…and then stops', after.speed < 1 && across( after, await state(), before.yaw ).total < 1.5, after.speed );
+
+}
+
 // the status and controls panels fade together while you use the keys, and return together
 {
 
@@ -131,7 +233,7 @@ r = await hold( [ 'KeyC' ], 1200 );
 check( 'C descends', r.rose < - 2, + r.rose.toFixed( 1 ) );
 await sleep( 800 );
 
-// the scroll wheel does nothing: no speed change, and neither it nor a trackpad pinch (Ctrl + wheel) scrolls or zooms the page
+// the scroll wheel never scrolls or zooms the page: neither it nor a trackpad pinch (Ctrl + wheel) scrolls or zooms the page
 {
 
 	await page.mouse.move( 640, 400 );
@@ -347,12 +449,12 @@ await sleep( 300 );
 
 }
 
-// asked for less motion: a fast turn in the air neither banks nor widens the view
+// a fast turn in the air neither banks nor widens the view, whatever the device's motion setting
 {
 
 	const turn = async () => {
 
-		// level, 300 m up, where height does not change the view: only speed may
+		// level, 300 m up, where height does not change the view: only speed or turning could
 		await page.evaluate( () => {
 
 			const here = world.toLatLng( player.position );
@@ -361,23 +463,19 @@ await sleep( 300 );
 		} );
 		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
 		await sleep( 2500 );
+		const rest = await page.evaluate( () => player.fov );
 		await page.mouse.click( 400, 400 );
 		await page.keyboard.down( 'ArrowUp' ); await page.keyboard.down( 'ArrowLeft' );
 		await sleep( 1500 );
 		const s = await page.evaluate( () => ( { mode: player.mode, roll: + player.camera.rotation.z.toFixed( 3 ), fov: + player.fov.toFixed( 1 ) } ) );
 		await page.keyboard.up( 'ArrowLeft' ); await page.keyboard.up( 'ArrowUp' );
-		await sleep( 2500 );
-		// how much wider the view was at speed than once stopped, at the same spot
-		s.widened = + ( s.fov - await page.evaluate( () => player.fov ) ).toFixed( 1 );
+		s.widened = + ( s.fov - rest ).toFixed( 1 );
 		return s;
 
 	};
 	if ( ( await state() ).mode !== 'fly' ) await page.keyboard.press( 'KeyF' );
-	const usual = await turn();
-	await page.emulateMediaFeatures( [ { name: 'prefers-reduced-motion', value: 'reduce' } ] );
-	const calm = await turn();
-	await page.emulateMediaFeatures( [] );
-	check( 'with less motion asked for, the view neither banks nor widens', Math.abs( usual.roll ) > 0.1 && usual.widened > 2 && Math.abs( calm.roll ) < 0.01 && Math.abs( calm.widened ) < 1, { usual, calm } );
+	const flying = await turn();
+	check( 'a fast turn while flying does not bank or widen the view', flying.mode === 'fly' && Math.abs( flying.roll ) < 0.01 && Math.abs( flying.widened ) < 1, flying );
 
 }
 
@@ -413,16 +511,25 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 // flying low, the view is as wide as on foot; it narrows as you climb
 {
 
+	// The height is set from the ground measured where you are. High up, that is the coarse tiles,
+	// which can turn something tall and thin (Nelson's Column) into a blob 40 m above the street; once
+	// the detailed ones arrive the ground is the street. So set the height once more from down there.
 	const at = async height => {
 
-		await page.evaluate( height => {
+		for ( let tries = 0; tries < 3; tries ++ ) {
 
-			const here = world.toLatLng( player.position );
-			player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + height, heading: player.heading, pitch: 0, mode: 'fly' } );
+			await page.evaluate( height => {
 
-		}, height );
-		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
-		await sleep( 2500 ); // the view eases to its new angle
+				const here = world.toLatLng( player.position );
+				player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + height, heading: player.heading, pitch: 0, mode: 'fly' } );
+
+			}, height );
+			await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+			await sleep( 2500 ); // the view eases to its new angle, and the tiles below refine
+			if ( Math.abs( await page.evaluate( () => player.heightAboveGround ) - height ) < 5 ) break;
+
+		}
+
 		return page.evaluate( () => ( { height: Math.round( player.heightAboveGround ), fov: + player.fov.toFixed( 1 ) } ) );
 
 	};
@@ -536,18 +643,23 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 
 // --- Street View, with made-up panoramas ---------------------------------------------------
 // The 3D tiles are real; every Street View answer is made up here, so nothing of it reaches Google
-// (and none of it is billed). Eleven panoramas 4 m apart along Westminster Bridge, the nearest linking the last two.
+// (and none of it is billed). Eleven of Google's panoramas 4 m apart along Westminster Bridge, the
+// nearest linking the last two, and a visitor's upload where you stand, as at any sight. Google's own
+// have 22-character IDs: here 'pano0' and so on, filled out with underscores (left off in the checks).
 {
 
 	const LAT = 51.50080, LNG = - 0.12150;
 	const ONE_PIXEL = Buffer.from( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM446IEAAMSATP56IVbAAAAAElFTkSuQmCC', 'base64' );
 	const panos = [ 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40 ].map( ( d, i ) => ( {
-		panoId: 'pano' + i, lat: LAT, lng: LNG - d / ( 111320 * Math.cos( LAT * Math.PI / 180 ) ), heading: 270, tilt: 90, roll: 0,
+		panoId: ( 'pano' + i ).padEnd( 22, '_' ), lat: LAT, lng: LNG - d / ( 111320 * Math.cos( LAT * Math.PI / 180 ) ), heading: 270, tilt: 90, roll: 0,
 		imageWidth: 16384, imageHeight: 8192, tileWidth: 512, tileHeight: 512, date: '2024-05', copyright: '© 2024 Google',
-		reportProblemLink: 'https://www.google.com/local/imagery/report/?made-up', links: i === 0 ? [ { panoId: 'pano9' }, { panoId: 'pano10' } ] : [],
+		reportProblemLink: 'https://www.google.com/local/imagery/report/?made-up', links: i === 0 ? [ { panoId: 'pano9'.padEnd( 22, '_' ) }, { panoId: 'pano10'.padEnd( 22, '_' ) } ] : [],
 	} ) );
+	const UPLOAD = 'CAoSFkNJSE0wb2dLRUlDQWdJQ01zdV9PZnc.';
 	const asked = [];
 	let answer = 200;
+	// the first search is answered with nothing at all, as Google sometimes does
+	let nothingOnce = true;
 	const sv = await browser.newPage();
 	await guard( sv, errors );
 	await sv.setRequestInterception( true );
@@ -560,11 +672,12 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 		if ( ! street ) return r.continue();
 		const what = u.pathname.endsWith( 'createSession' ) ? 'session' : u.pathname.split( '/streetview/' )[ 1 ].split( '/' )[ 0 ];
 		const tile = u.pathname.match( /tiles\/(\d+)\/(\d+)\/(\d+)/ );
-		asked.push( { what, pano: u.searchParams.get( 'panoId' ), y: tile ? + tile[ 3 ] : null, session: u.searchParams.get( 'session' ), t: Date.now() } );
+		asked.push( { what, pano: u.searchParams.get( 'panoId' )?.replace( /_+$/, '' ), y: tile ? + tile[ 3 ] : null, session: u.searchParams.get( 'session' ), t: Date.now() } );
 		const json = o => r.respond( { status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify( o ) } );
 		if ( answer === 429 ) return r.respond( { status: 429, headers: cors, contentType: 'application/json', body: JSON.stringify( { error: { code: 429, message: "Quota exceeded for quota metric 'Street View Tiles requests' and limit 'Street View Tiles requests per day' (made up)" } } ) } );
 		if ( what === 'session' ) return json( { session: 'made-up-session', expiry: String( Math.round( Date.now() / 1000 ) + 14 * 86400 ) } );
-		if ( what === 'panoIds' ) return json( { panoIds: panos.slice( 0, 9 ).map( p => p.panoId ) } );
+		if ( what === 'panoIds' && nothingOnce ) { nothingOnce = false; return json( {} ); }
+		if ( what === 'panoIds' ) return json( { panoIds: [ UPLOAD, ...panos.slice( 0, 9 ).map( p => p.panoId ) ] } );
 		if ( what === 'metadata' ) return json( panos.find( p => p.panoId === u.searchParams.get( 'panoId' ) ) );
 		return new Promise( resolve => setTimeout( resolve, 20 ) ).then( () => r.respond( { status: 200, headers: cors, contentType: 'image/png', body: ONE_PIXEL } ) );
 
@@ -580,7 +693,7 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 		player.teleport( lat, lng, { height: ground + 1.7, heading, pitch: 0, mode: 'walk' } );
 
 	}, lat, lng, heading );
-	const slots = () => sv.evaluate( () => window.streetview?.debug.slots.filter( s => s.pano ).map( s => ( { pano: s.pano, strength: s.strength } ) ) ?? [] );
+	const slots = () => sv.evaluate( () => window.streetview?.debug.slots.filter( s => s.pano ).map( s => ( { pano: s.pano.replace( /_+$/, '' ), strength: s.strength } ) ) ?? [] );
 	const credit = () => sv.evaluate( () => document.querySelector( '.credits .streetview-credit' )?.textContent || null );
 
 	await sv.goto( `${ process.env.TEST_URL ?? 'http://localhost:5173/' }?profile=desktop#${ LAT },${ LNG }`, { waitUntil: 'domcontentloaded' } );
@@ -602,6 +715,9 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 	check( 'Street View finds the ground under a panorama 60 m behind you, out of view', behind.street !== null && behind.ground !== null && Math.abs( behind.ground - behind.street ) < 3, behind );
 	check( 'Street View: six photos chosen and shown, nearest first', shown.length === 6 && shown.every( s => s.strength > 0.99 ) && shown[ 0 ].pano === 'pano0', shown );
 	const details = asked.filter( a => a.what === 'metadata' ).map( a => a.pano );
+	const searches = asked.filter( a => a.what === 'panoIds' ).length;
+	check( '…after a first search answered with nothing, tried again standing still', ! nothingOnce && searches === 2 && warnings.some( w => w.includes( 'answered the search with nothing' ) ), { searches, warnings } );
+	check( '…passing over the visitor\'s upload without asking about it', ! details.includes( UPLOAD ), details );
 	check( '…asking for the details of only 7 of the 11 found: the nearest, its two street neighbours, then four more', details.length === 7 && details[ 0 ] === 'pano0' && details.includes( 'pano9' ) && details.includes( 'pano10' ), details );
 	const tiles = asked.filter( a => a.what === 'tiles' );
 	const per = {};
@@ -611,7 +727,7 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 	const order = shown.map( s => s.pano ).sort( ( a, b ) => span( a )[ 0 ] - span( b )[ 0 ] );
 	check( '…downloaded one photo at a time, the nearest first', order[ 0 ] === 'pano0' && order.every( ( id, i ) => i === 0 || span( order[ i - 1 ] )[ 1 ] <= span( id )[ 0 ] ), order.map( id => span( id ).map( v => v - span( 'pano0' )[ 0 ] ) ) );
 	const line = await credit();
-	check( '…credited on screen with the year, the owner and a way to report a problem', ( line ?? '' ).startsWith( 'Street View 2024 · © 2024 Google' ) && await sv.evaluate( () => [ ...document.querySelectorAll( 'a' ) ].some( a => a.textContent === 'Report a problem' && a.href.includes( 'made-up' ) ) ), line );
+	check( '…credited on screen with the copyright and a way to report a problem', ( line ?? '' ).startsWith( '© 2024 Google · Report problem' ) && await sv.evaluate( () => [ ...document.querySelectorAll( 'a' ) ].some( a => a.textContent === 'Report problem' && a.href.includes( 'made-up' ) ) ), line );
 	check( '…and one session, remembered on the device for next time', asked.filter( a => a.what === 'session' ).length === 1 && await sv.evaluate( () => localStorage.getItem( 'walk-and-fly-streetview-session' )?.includes( 'made-up-session' ) ), asked.filter( a => a.what === 'session' ).length );
 
 	// switched off: the photos fade and the credit goes with them, nothing more is asked while walking on
@@ -644,7 +760,7 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 	check( 'the Street View credit is a line of Google\'s own credits, above them', await sv.evaluate( () => {
 
 		const line = document.querySelector( '.credits .streetview-credit' );
-		return !! line && line.parentElement.firstElementChild === line && line.textContent.startsWith( 'Street View 2024' );
+		return !! line && line.parentElement.firstElementChild === line && line.textContent.startsWith( '© 2024 Google' );
 
 	} ) );
 	await sv.close();

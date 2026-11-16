@@ -9,6 +9,8 @@ export interface Hit {
 	point: Vector3;
 	normal: Vector3;
 	distance: number;
+	/** How coarse the tile hit is: its geometric error in metres (smaller is more detailed). */
+	detail?: number;
 }
 
 export interface LatLng {
@@ -164,7 +166,8 @@ export class World {
 		if ( hit.face ) normal.copy( hit.face.normal ).transformDirection( hit.object.matrixWorld );
 		// make the normal face the ray origin regardless of triangle winding
 		if ( normal.dot( direction ) > 0 ) normal.negate();
-		return { point: hit.point.clone(), normal, distance: hit.distance };
+		const detail = ( hit.object.userData.tile as { geometricError?: number } | undefined )?.geometricError;
+		return { point: hit.point.clone(), normal, distance: hit.distance, detail };
 
 	}
 

@@ -50,14 +50,24 @@ const REQUERY = 6;
  * waiting to go there.
  */
 const KEPT = quality.phone ? 10 : 30;
-/** Panoramas are also looked for this far from you (metres), in AROUND directions. */
-const REACH = 20, AROUND = 8;
+/**
+ * Panoramas are looked for at points SPACING metres apart out to REACH from you, each finding the
+ * nearest within SPACING of it: one request of about 37 points. Each point finds only its nearest,
+ * so at a sight crowded with visitors' uploads it takes points this close to find Google's own.
+ */
+const REACH = 20, SPACING = 6;
 /**
  * A look-up asks for the details of the panoramas it found only until it has this many of
  * Google's own to choose from besides the nearest: enough to fill the other slots with one to
  * spare, rather than every one found all around.
  */
 const CHOOSE_FROM = SLOTS;
+/**
+ * Most details one look-up asks for, whatever it finds. Following links ends once there are enough
+ * of Google's own, but where the photos around are not Google's (other owners' official coverage,
+ * whose IDs look the same) it would otherwise walk the whole street network, at a request each.
+ */
+const MOST_DETAILS = 4 * CHOOSE_FROM;
 /** metres of advantage a panorama already showing has over a newcomer */
 const KEEP = 8;
 /** A panorama's photograph fades out between these distances from it, in metres. */
@@ -208,6 +218,13 @@ function slotCode( i: number ) {
  * out and at whatever height they were taken, so they land on the wrong walls.
  */
 const byGoogle = ( m: Metadata ) => /Photo by: Google|^© ?\d* ?Google/.test( m.copyright ?? '' );
+/**
+ * Whether a panorama ID looks like one of Google's own: theirs are 22 characters, uploads are
+ * longer (starting `CAoS`). Lets uploads be passed over without paying to ask about them; `byGoogle`
+ * still checks the details of every one used. At a sight like Westminster Bridge nearly every
+ * panorama found is an upload, and Google offers no way to ask for its own only.
+ */
+const looksGoogle = ( id: string ) => /^[\w-]{22}$/.test( id );
 
 export class StreetView {
 
@@ -243,6 +260,8 @@ export class StreetView {
 	private street = 0;
 	/** Until when nothing is asked of Google, after it answered "too many requests" (429). */
 	private refusedUntil = 0;
+	/** When Google last answered "too many requests" (Date.now()), for the debug panel. */
+	private refusedAt = 0;
 	/** Whether Google was being left alone last frame, to notice the wait ending. */
 	private wasRefused = false;
 	/** Until when no look-up is tried, after one could not be made. */
@@ -287,7 +306,30 @@ export class StreetView {
 		// and can never overlap them. Only the link takes clicks and touches.
 		this.credit.className = 'streetview-credit';
 		const credits = document.querySelector( '#ui .credits' );
-		if ( credits ) credits.prepend( this.credit ); else document.body.append( this.credit );
+		// below the debug panel, when there is one
+		if ( credits ) credits.insertBefore( this.credit, credits.querySelector( ':scope > :not(.debug)' ) ); else document.body.append( this.credit );
+
+	}
+
+	/** What it is doing, in a few words, for the debug panel. */
+	get status() {
+
+		const now = performance.now();
+		const s = ( ms: number ) => `${ Math.ceil( ms / 1000 ) } s`;
+		const what = ! this.enabled ? 'off'
+			: this.refused ? `waiting ${ s( this.refusedUntil - now ) }: Google asked for fewer requests`
+				: this.downloading ? `downloading: ${ this.wantedList.filter( m => ! this.slots.some( s => s.meta?.panoId === m.panoId ) ).length } photos to go`
+					: this.busy ? 'searching'
+						: ! this.walking ? 'paused: only while walking'
+							: now < this.retryAt ? `trying again in ${ s( this.retryAt - now ) }`
+								: 'up to date';
+		return {
+			shown: this.slots.filter( s => s.meta && s.strength > 0.99 ).length,
+			slots: SLOTS,
+			kept: this.kept.size,
+			what,
+			refusedAt: this.refusedAt,
+		};
 
 	}
 
@@ -451,6 +493,7 @@ export class StreetView {
 		const daily = /per day/i.test( message );
 		if ( ! this.refused ) console.warn( `Street View: Google refused (429), nothing asked for ${ daily ? 10 : 1 } min.`, message );
 		this.refusedUntil = performance.now() + ( daily ? REFUSED_DAY_WAIT : REFUSED_WAIT );
+		this.refusedAt = Date.now();
 		return new Refused( message );
 
 	}
@@ -533,51 +576,66 @@ export class StreetView {
 
 		}
 
-		const locations = [ { lat: here.lat, lng: here.lng } ];
-		for ( let k = 0; k < AROUND; k ++ ) {
+		// a grid of points within REACH of you, nearest first, so what is found runs roughly nearest first
+		const points: { lat: number, lng: number, d: number }[] = [];
+		const n = Math.floor( REACH / SPACING );
+		for ( let i = - n; i <= n; i ++ ) for ( let j = - n; j <= n; j ++ ) {
 
-			const a = k / AROUND * 2 * Math.PI;
-			locations.push( {
-				lat: here.lat + REACH * Math.cos( a ) / 111320,
-				lng: here.lng + REACH * Math.sin( a ) / ( 111320 * Math.cos( here.lat * DEG ) ),
-			} );
+			const d = Math.hypot( i, j ) * SPACING;
+			if ( d <= REACH ) points.push( { lat: here.lat + i * SPACING / 111320, lng: here.lng + j * SPACING / ( 111320 * Math.cos( here.lat * DEG ) ), d } );
 
 		}
 
-		const found = ( await ( await this.call( 'streetview/panoIds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify( { locations, radius: REACH } ) } ) ).json() ).panoIds as string[] | undefined;
-		const nearest = found?.[ 0 ];
+		points.sort( ( a, b ) => a.d - b.d );
+		const locations = points.map( ( { lat, lng } ) => ( { lat, lng } ) );
+		const answer = await ( await this.call( 'streetview/panoIds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify( { locations, radius: SPACING } ) } ) ).json() as { panoIds?: string[] };
+		// Google sometimes answers with nothing at all, not even the empty places; that is not "no
+		// Street View here", so it is tried again, ever more slowly while it lasts (see `update`)
+		if ( ! Array.isArray( answer.panoIds ) ) throw new Error( 'Google answered the search with nothing' );
+		const found = answer.panoIds.filter( id => id && looksGoogle( id ) );
 		// switched off meanwhile: what was found is not used (switching on looks again)
 		if ( ! this.enabled ) return true;
-		// no Street View here: an answer all the same, not asked again until you move on
+		// The first of Google's own found (at your spot if there is one there) is where the search
+		// starts. None among the uploads: one already shown will do, its neighbours being nearby.
+		const nearest = found[ 0 ] ?? this.slots.find( s => s.meta && s.wanted )?.meta?.panoId;
+		// no Street View of Google's here: an answer all the same, not asked again until you move on
 		if ( ! nearest ) return true;
 		this.nearest = nearest;
 		const meta = await this.metadata( nearest );
 		if ( ! this.enabled ) return true;
-		// The others, most likely useful first: the nearest one's neighbours along the street, then
-		// those found all around. Details already in memory cost nothing; the rest are asked for a
-		// few at a time, until there are enough to choose from.
-		const order = [ ...new Set( [ ...( meta.links ?? [] ).map( l => l.panoId ), ...( found ?? [] ).slice( 1 ) ] ) ].filter( id => id && id !== nearest );
+		// The others, most likely useful first: the neighbours along the street of those known, then
+		// those found all around. Google's own link only to Google's own, so following the links finds
+		// them even where uploads crowd the search. Details already in memory cost nothing; the rest
+		// are asked for as many at a time as are still needed, until there are enough to choose from.
+		const linked = ( m: Metadata ) => ( m.links ?? [] ).map( l => l.panoId ).filter( looksGoogle );
+		const queue = [ ...linked( meta ), ...found.slice( 1 ) ];
+		const seen = new Set( [ nearest ] );
 		const candidates: Metadata[] = [];
-		const ask: string[] = [];
-		for ( const id of order ) {
+		const enough = () => candidates.filter( byGoogle ).length >= CHOOSE_FROM;
+		let asked = 0;
+		while ( queue.length && ! enough() && asked < MOST_DETAILS ) {
 
-			const known = this.metaCache.get( id );
-			if ( known ) candidates.push( known );
-			else if ( performance.now() >= ( this.failed.get( id ) ?? 0 ) ) ask.push( id ); // one that failed lately is not asked again yet
+			const batch: string[] = [];
+			while ( queue.length && batch.length < CHOOSE_FROM - candidates.filter( byGoogle ).length ) {
 
-		}
+				const id = queue.shift()!;
+				if ( seen.has( id ) ) continue;
+				seen.add( id );
+				const known = this.metaCache.get( id );
+				if ( known ) { candidates.push( known ); queue.push( ...linked( known ) ); }
+				else if ( performance.now() >= ( this.failed.get( id ) ?? 0 ) ) batch.push( id ); // one that failed lately is not asked again yet
 
-		// as many at once as are still needed; more only if some turn out not to be Google's
-		for ( let i = 0, need = CHOOSE_FROM - candidates.filter( byGoogle ).length; i < ask.length && need > 0; need = CHOOSE_FROM - candidates.filter( byGoogle ).length ) {
+			}
 
-			const answers = await Promise.all( ask.slice( i, i += need ).map( id => this.metadata( id ).catch( ( e: unknown ) => {
+			asked += batch.length;
+			const answers = await Promise.all( batch.map( id => this.metadata( id ).catch( ( e: unknown ) => {
 
 				if ( ! ( e instanceof Refused ) ) this.failed.set( id, performance.now() + FAILED_WAIT );
 				return null;
 
 			} ) ) );
 			if ( ! this.enabled ) return true;
-			for ( const m of answers ) if ( m ) candidates.push( m );
+			for ( const m of answers ) if ( m ) { candidates.push( m ); queue.push( ...linked( m ) ); }
 
 		}
 
@@ -785,20 +843,20 @@ export class StreetView {
 	/** Each panorama's date and copyright, and its link to report a problem, as Street View requires. */
 	private showCredit() {
 
-		// One line for all the photos on screen, fading ones included: each owner once, the years they
-		// were taken, and the report link of the panorama nearest you (each panorama has its own).
+		// One short line for all the photos on screen, fading ones included: each copyright once (Google
+		// requires it with every panorama) and the report link of the panorama nearest you (also required;
+		// each panorama has its own).
 		const shown = this.slots.filter( s => s.meta && s.strength > 0 ).map( s => s.meta! );
 		this.credit.replaceChildren();
 		if ( ! shown.length ) return;
-		const owners = [ ...new Set( shown.map( m => ( m.copyright ?? '' ).replace( /^From the Owner, /, '' ) ) ) ].join( '; ' );
-		const dates = shown.map( m => m.date ?? '' ).filter( Boolean ).sort();
-		const span = dates.length ? dates[ 0 ].slice( 0, 4 ) === dates.at( - 1 )!.slice( 0, 4 ) ? dates[ 0 ].slice( 0, 4 ) : `${ dates[ 0 ].slice( 0, 4 ) }–${ dates.at( - 1 )!.slice( 0, 4 ) }` : '';
-		this.credit.append( `${ span ? `Street View ${ span }` : 'Street View' } · ${ owners } ` );
+		const owners = [ ...new Set( shown.map( m => ( m.copyright ?? '' ).replace( /^From the Owner, /, '' ) ).filter( Boolean ) ) ].join( '; ' );
+		this.credit.append( owners || 'Street View' );
 		const nearest = shown.find( m => m.panoId === this.nearest ) ?? shown[ 0 ];
 		if ( nearest.reportProblemLink?.startsWith( 'https://' ) ) {
 
+			this.credit.append( ' · ' );
 			const a = document.createElement( 'a' );
-			a.href = nearest.reportProblemLink; a.target = '_blank'; a.rel = 'noreferrer'; a.textContent = 'Report a problem';
+			a.href = nearest.reportProblemLink; a.target = '_blank'; a.rel = 'noreferrer'; a.textContent = 'Report problem';
 			a.style.cssText = 'color:#fff;pointer-events:auto';
 			this.credit.append( a );
 

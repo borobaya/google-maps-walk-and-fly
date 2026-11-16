@@ -139,6 +139,31 @@ await tap( 195, 500 ); // the scene
 await sleep( 300 );
 check( 'touching the scene puts the box away', ! await shown( '.goto' ) );
 
+// --- the debug figures: a finger held on the compass for a second -----------
+{
+
+	const figures = () => page.evaluate( () => { const p = document.querySelector( '.credits .debug' ); return !! p && ! p.hidden && p.children.length > 0; } );
+	const c = await centre( '.compass' );
+	await tap( c.x, c.y );
+	await sleep( 1500 );
+	const tapped = await figures();
+	await down( 1, c.x, c.y ); await sleep( 1300 ); await up( 1 );
+	await page.waitForFunction( () => document.querySelector( '.credits .debug' )?.children.length > 0, { timeout: 15000 } ).catch( () => {} );
+	const held = await figures();
+	// sliding off the compass before the second is up calls it off
+	await down( 1, c.x, c.y ); await move( 1, c.x + 120, c.y + 200 ); await sleep( 1300 ); await up( 1 );
+	const slid = await figures();
+	await down( 1, c.x, c.y ); await sleep( 1300 ); await up( 1 );
+	const again = await figures();
+	check( 'holding the compass a second shows the debug figures, and again hides them; a tap, or sliding off, does nothing', ! tapped && held && slid && ! again, { tapped, held, slid, again } );
+	// the compass lets touches through: a drag that starts on it steers like one anywhere else
+	await down( 1, c.x, c.y ); await move( 1, c.x + 90, c.y + 160 );
+	const steering = ( await state() ).stick;
+	await up( 1 );
+	check( '…and a drag that starts on the compass still steers', Math.abs( steering.z ) + Math.abs( steering.turn ) + Math.abs( steering.x ) > 0.3, steering );
+
+}
+
 // --- on foot -----------------------------------------------------------------
 // start from the same open spot every time, facing north across the square
 await page.evaluate( () => { player.teleport( 51.508, - 0.1281 ); player.yaw = Math.PI; } );

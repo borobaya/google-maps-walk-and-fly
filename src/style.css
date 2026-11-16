@@ -98,6 +98,8 @@ html, body {
 	backdrop-filter: blur(8px);
 	pointer-events: none;
 }
+/* held for a second, it shows or hides the debug figures (hud.ts): the ring fills with the accent colour over the second it takes */
+.compass.holding { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); transition: border-color 1s, box-shadow 1s; }
 /* fixed marker showing which way you face */
 .compass::after {
 	content: '';
@@ -197,6 +199,10 @@ body.looking #view { cursor: none; }
 	pointer-events: none;
 }
 .credits img { height: 18px; margin: 0 8px 0 10px; vertical-align: -4px; }
+/* the debug figures (P): a few lines above the credits */
+.credits .debug { margin-bottom: 4px; font-variant-numeric: tabular-nums; line-height: 1.4; }
+/* its last line is clickable: it sets the daily limit */
+.credits .debug div:last-child { pointer-events: auto; cursor: pointer; }
 
 .banner {
 	display: none;

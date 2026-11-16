@@ -81,15 +81,19 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 | Key | Walking | Flying |
 | --- | --- | --- |
 | ↑ ↓ | forward / back | fly forward / back along where you look; let go to stop |
-| ← → | turn | turn (the view banks) |
+| ← → | turn | turn |
 | A D | sidestep | sidestep |
 | W S | look up / down | pitch up / down |
 | Mouse, button held | drag to look around | drag to look around |
+| Scrolling: a two-finger swipe, or the wheel | scroll down goes forward, up goes back; a swipe right or left steps aside | the same, along where you look |
+| Double click | go part of the way toward what you clicked | the same, in 3D |
 | Space | jump | climb; faster the longer you hold |
 | C | – | descend, faster the longer you hold; touching the ground lands you |
 | Space twice, or F | take off | drop to the ground |
 
 The Clouds button in the box at the top right switches the clouds on and off; in a narrow window that box is folded behind the Go to… button. Phones and tablets have no clouds.
+
+A gentle swipe goes at the usual pace and a hard one runs (or boosts, flying). It is scrolling that moves you: scrolling down goes forward. With the computer's usual "natural" scrolling a trackpad scrolls down when you swipe up, so swiping up moves you forward and swiping right steps you to the right; a mouse wheel goes forward when rolled towards you. If you have switched natural scrolling off, a swipe is the other way round. A double click takes you about halfway to what was under the pointer (the most is 15 m on foot, and about three seconds' flying in the air), and any key or swipe cancels it. Phones have their thumb stick instead.
 
 Flying speed grows with height, so you can thread streets down low and cross a city up high.
 
@@ -132,7 +136,7 @@ Where you begin, in order:
 3. Your own location, if you let the browser share it.
 4. The Tower of London.
 
-Your location, your last position and whether Street View is on stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
+Your location, your last position, whether Street View is on, and the debug panel's count of today's requests to Google (and the daily limit you give it) stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
 
 To search by place name as well, also enable the **Maps JavaScript API** and **Geocoding API** on your key (and add them to its API restrictions). Without them the box still accepts coordinates.
 
@@ -143,7 +147,7 @@ Up close, Google's 3D buildings are soft (see [Limits](#limits-worth-knowing)). 
 - **Off to begin with.** Your choice is remembered on the device. Its code is only downloaded the first time you switch it on.
 - **Only on foot.** It looks for photos as you walk, every few metres. Flying, it uses only the photos it already has.
 - **Nearest first.** Up to six photos are shown at once, the ones taken nearest you; each wall shows the nearest photo that could see it. They fade in as they arrive and out as you walk on.
-- **Credited on screen.** While any photo shows, a line above Google's credits gives the year it was taken, who took it, and a **Report a problem** link, as Street View requires.
+- **Credited on screen.** While any photo shows, a short line above Google's credits gives the photo's copyright and a **Report problem** link, both of which Street View requires.
 - **Kept only in memory.** Photos you have seen are kept while the page is open (30 on a computer, 10 on a phone), so walking back costs nothing, and switching off keeps them. Nothing is saved on the device except Street View's session (a token, not imagery), which lets your browser's own cache reuse what it may for as long as Google allows.
 
 It uses the same **Map Tiles API** as the 3D buildings, so a key that loads the city needs nothing more. But it uses noticeably more of the key's allowance; see [What it costs](#what-it-costs).
@@ -170,6 +174,14 @@ Built without a key (as the workflow does), the site asks each visitor for their
 - `src/atmosphere.ts` adds the sky and the volumetric clouds with [three-geospatial](https://github.com/takram-design-engineering/three-geospatial). The photos themselves are neither lit again nor hazed: `src/photo.ts` passes each one through in a form the last step turns back into its own colours, so they reach the screen exactly as Google supplied them.
 - `src/streetview.ts` lays Street View photos over the buildings: it finds the photos near you, downloads and stitches them in a worker, and adds a step to every tile's shader that paints each point from the nearest photo that could see it (judged from a depth map drawn from where each photo was taken).
 - `src/hud.ts` and `src/main.ts` hold the interface and the render loop.
+- `src/debug.ts` is a few lines of figures above the credits. Press **P**, or hold the compass for a second (handy on a phone), to show or hide them:
+  - frame rate and the slowest recent frame
+  - the 3D tiles drawn, kept and loading
+  - what the ground under you was measured against, and how detailed that tile is
+  - what Street View is doing
+  - how many requests went to Google this visit, and today in this browser
+
+  Google doesn't say how much of the day's quota is left, so this is an estimate: tap the last line and give it your key's "Street View Tiles requests per day" figure (from the Cloud Console) and it shows how much of that this browser has used today, counting from midnight Pacific time, when Google's daily quotas reset. It sees only this browser's requests (other tabs count too), not other devices or anything else using the key. The time Street View was last refused is shown as well.
 - `vite.config.ts` writes the page's content security policy: the hosts it may load from and talk to. A new host has to be added there, deliberately.
 
 Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScript. `npm run build` type-checks and produces a static site in `dist/`; `npm run lint` checks the code with [oxlint](https://oxc.rs), including rules that use TypeScript's types (such as promises left unhandled).

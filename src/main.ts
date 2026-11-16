@@ -2,8 +2,10 @@ import { MathUtils, PerspectiveCamera, Scene, Timer, WebGLRenderer } from 'three
 import { Atmosphere } from './atmosphere';
 import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
+import type { Debug } from './debug';
 import type { StreetView } from './streetview';
 import { quality } from './quality';
+import './requests'; // counts requests to Google from the start, for the debug panel
 import { addTouchControls } from './touch';
 import { World } from './world';
 import './style.css';
@@ -161,6 +163,31 @@ function start( key: string, typed: boolean ) {
 	let stored: string | null = null;
 	try { stored = localStorage.getItem( STREETVIEW_STORE ); } catch { /* storage blocked: off */ }
 	setStreetView( stored === 'on' );
+	// figures for finding out what is going on (see debug.ts): P or holding the compass shows and
+	// hides them. Their code is fetched the first time they are shown.
+	let debug: Debug | null = null;
+	let debugShown = false, debugLoading = false;
+	const showDebug = ( on: boolean ) => {
+
+		debugShown = on;
+		if ( debug ) return void ( debug.shown = on );
+		if ( ! on || debugLoading ) return;
+		debugLoading = true;
+		import( './debug' ).then( ( { Debug } ) => { debug = new Debug( renderer, world, player, () => streetview ); debug.shown = debugShown; } )
+			// not fetched (offline, or a deploy in between): the next press tries again
+			.catch( ( error: unknown ) => { debugShown = false; console.warn( 'Debug panel:', error ); } )
+			.finally( () => { debugLoading = false; } );
+
+	};
+	hud.onCompassHold = () => showDebug( ! debugShown );
+	window.addEventListener( 'keydown', e => {
+
+		// not while typing a place, nor with a shortcut held (Ctrl+P prints)
+		if ( e.code !== 'KeyP' || e.repeat || e.metaKey || e.ctrlKey || e.altKey ) return;
+		if ( e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement ) return;
+		showDebug( ! debugShown );
+
+	} );
 	// phones take the graphics away when memory runs low; say so instead of showing a frozen picture
 	canvas.addEventListener( 'webglcontextlost', e => {
 
@@ -370,6 +397,7 @@ function start( key: string, typed: boolean ) {
 		atmosphere.render( dt );
 		hud.update( time );
 		watchSpeed( dt, time );
+		debug?.update( dt, time );
 
 	};
 

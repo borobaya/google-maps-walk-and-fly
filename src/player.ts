@@ -61,14 +61,21 @@ function flyFov( height: number ) {
 	return MathUtils.lerp( BASE_FOV, FLY_FOV, t * t * ( 3 - 2 * t ) );
 
 }
-/** The device's "reduce motion" setting: no banking, no widening with speed, no bounce in your step. */
-const LESS_MOTION = matchMedia( '(prefers-reduced-motion: reduce)' );
 const MAX_DROP = 150; // a ground reading this far below the last one is not believed straight away
 const BODY = 1.0; // when flying, stay at least this far from walls on every side
 const FEELER = 60; // how far to look for nearby walls, metres
 const LIFT_START = 0.25; // going straight up or down begins at this share of flying speed...
 const LIFT_RAMP = 1.5; // ...and reaches all of it after being held this long, seconds
 const DOUBLE_TAP = 0.3; // seconds between Space presses that toggles flying
+const WHEEL_FULL = 15; // pixels of a two-finger swipe, in one event, for full pace
+const WHEEL_FAST = 60; // a harder swipe than this runs (on foot) or boosts (flying), as a long thumb drag does
+const WHEEL_STRAY = 0.4; // a swipe's weaker direction counts only above this share of the stronger one
+const WHEEL_HOLD = 120; // ms a wheel event keeps pushing, so a swipe's stream of them is one smooth movement
+/** A double click goes this share of the way to what was clicked on, between these limits (metres), walking. */
+const GLIDE_SHARE = 0.5, GLIDE_LEAST = 1.5, GLIDE_MOST = 15;
+const GLIDE_BLIND = 8; // metres walked when the click was on the sky, or nothing was hit
+const GLIDE_BLIND_FLYING = 40;
+const GLIDE_SECONDS = 3; // flying, at most this long at the usual flying speed, however far off the click was
 
 const UP = new Vector3( 0, 1, 0 );
 
@@ -89,6 +96,12 @@ export class Player {
 	clearance = 60;
 	/** Frames in flight where no ground could be found (tiles still loading); for diagnostics. */
 	groundMisses = 0;
+	/**
+	 * Where the last ground height came from, for the debug panel: measured straight below you, the
+	 * highest surface in your column (below was empty: slipped under the mesh, or still loading), the
+	 * last one known (nothing loaded under you yet), or set on arriving.
+	 */
+	groundFrom: 'below' | 'top' | 'held' | 'arrival' = 'arrival';
 	/** True while a mouse button or a finger is held on the scene to look around. */
 	dragging = false;
 	/**
@@ -101,14 +114,11 @@ export class Player {
 	private touching = false;
 	/** True once the mouse has been used to look, so the hint can go away. */
 	hasLooked = false;
-	/** Camera field of view in degrees; widens with speed. */
+	/** Camera field of view in degrees; set by height and eased, never by speed. */
 	fov = BASE_FOV;
 
 	private keys = new Set<string>();
 	private grounded = false;
-	private roll = 0;
-	private yawRate = 0;
-	private yawBefore = Math.PI;
 	private renderY = 1500;
 	private settleTime = 0;
 	private lastSpace = - Infinity;
@@ -118,10 +128,17 @@ export class Player {
 	private fovTarget = BASE_FOV;
 	/** How fast the view angle is changing, degrees per second (see FOV_EASE). */
 	private fovRate = 0;
-	private bob = 0;
 	private liftTime = 0;
 	private liftSign = 0;
 	private resume: Resume | null = null;
+	/** A two-finger swipe (sent as wheel events): how hard it pushes you forward (+) or back (-), and until when. */
+	private wheelPush = 0;
+	/** The same sideways: right (+) or left (-). */
+	private wheelSide = 0;
+	private wheelFast = false;
+	private wheelUntil = 0;
+	/** A double click sets you off toward what was clicked on: its direction in scene space, and the metres still to go. */
+	private glide: { dir: Vector3, left: number, age: number, stuck: number, mode: Mode } | null = null;
 	private lookPointer: number | null = null;
 	private movePointer: number | null = null;
 	private lookX = 0;
@@ -155,10 +172,17 @@ export class Player {
 	 * forward stays level. Held sideways it is the usual two-thumb layout of mobile games: the
 	 * left half moves and the right half looks.
 	 */
-	/** True while something is being held to steer: a key, a mouse button or a finger on the scene, or ▲ ▼. */
+	/** True while something is being held to steer: a key, a mouse button or a finger on the scene, ▲ ▼, or a swipe. */
 	get steering(): boolean {
 
-		return this.keys.size > 0 || this.dragging || this.movePointer !== null || this.stick.y !== 0;
+		return this.keys.size > 0 || this.dragging || this.movePointer !== null || this.stick.y !== 0 || this.pushing;
+
+	}
+
+	/** Whether a swipe is pushing you now. */
+	private get pushing(): boolean {
+
+		return performance.now() < this.wheelUntil && ( this.wheelPush !== 0 || this.wheelSide !== 0 );
 
 	}
 
@@ -192,14 +216,14 @@ export class Player {
 		this.settleTime = 0;
 		this.lastGround = - Infinity;
 		this.resume = resume;
+		this.glide = null;
+		this.wheelUntil = 0;
 		if ( resume ) {
 
 			this.yaw = ( 180 - resume.heading ) * MathUtils.DEG2RAD;
 			this.pitch = MathUtils.clamp( resume.pitch, - 1.55, 1.55 );
 
 		}
-
-		this.yawBefore = this.yaw; // no banking from the jump itself
 
 	}
 
@@ -209,6 +233,7 @@ export class Player {
 		if ( this.mode === 'fly' ) {
 
 			// fold the wings: gravity takes over until you land
+			this.glide = null;
 			this.mode = 'walk';
 			this.grounded = false;
 
@@ -230,11 +255,10 @@ export class Player {
 		else if ( this.mode === 'walk' ) this.walk( dt );
 		else this.fly( dt );
 
+		if ( this.glide ) this.advanceGlide( dt );
 		this.speed = this.settling ? 0 : this.position.distanceTo( this.last ) / dt;
 		this.reanchor();
-		// turning measured since the last frame, so steering with the mouse banks too
-		this.applyCamera( dt, ( this.yaw - this.yawBefore ) / dt );
-		this.yawBefore = this.yaw;
+		this.applyCamera( dt );
 
 	}
 
@@ -270,6 +294,7 @@ export class Player {
 
 		this.speedHeight = this.heightAboveGround;
 		this.renderY = this.position.y;
+		this.groundFrom = 'arrival';
 		this.settling = false;
 
 	}
@@ -278,13 +303,71 @@ export class Player {
 
 		const k = this.keys, t = this.stick;
 		const unit = ( v: number ) => MathUtils.clamp( v, - 1, 1 );
+		const g = this.glide ? this.glideAxes() : null;
 		return {
-			z: unit( ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ) + t.z ),
-			x: unit( ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ) + t.x ),
-			y: unit( ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ) + t.y ),
+			z: unit( ( k.has( 'ArrowUp' ) ? 1 : 0 ) - ( k.has( 'ArrowDown' ) ? 1 : 0 ) + t.z + ( this.pushing ? this.wheelPush : 0 ) + ( g?.z ?? 0 ) ),
+			x: unit( ( k.has( 'KeyD' ) ? 1 : 0 ) - ( k.has( 'KeyA' ) ? 1 : 0 ) + t.x + ( this.pushing ? this.wheelSide : 0 ) + ( g?.x ?? 0 ) ),
+			y: unit( ( k.has( 'Space' ) ? 1 : 0 ) - ( k.has( 'KeyC' ) ? 1 : 0 ) + t.y + ( g?.y ?? 0 ) ),
 			// running and boosting are a long drag on a touch screen; the keyboard has no key for them
-			fast: t.fast,
+			fast: t.fast || ( this.pushing && this.wheelFast ),
 		};
+
+	}
+
+	/** The double click's direction, as the forward, sideways and up input that goes that way from where you face. */
+	private glideAxes() {
+
+		const d = this.glide!.dir;
+		const sin = Math.sin( this.yaw ), cos = Math.cos( this.yaw );
+		const ahead = - d.x * sin - d.z * cos, side = d.x * cos - d.z * sin;
+		if ( this.mode === 'walk' ) return { z: ahead, x: side, y: 0 };
+		// flying: forward is along the view, which tilts with the pitch; sideways counts for half, and up is its own axis
+		const pitch = this.oneThumb ? 0 : this.pitch;
+		const z = ahead / Math.max( Math.cos( pitch ), 0.2 );
+		const y = d.y - z * Math.sin( pitch );
+		// looking steeply up or down these can come to more than 1, which the inputs are cut to: scaled
+		// together instead, so they still add up to the direction clicked
+		const most = Math.max( 1, Math.abs( z ), Math.abs( side * 2 ), Math.abs( y ) );
+		return { z: z / most, x: side * 2 / most, y: y / most };
+
+	}
+
+	/** Counts the double click's distance down as you go, and ends it on arriving, running into something, or any other input. */
+	private advanceGlide( dt: number ) {
+
+		const g = this.glide!;
+		// landing (or taking off) on the way ends it: the way to go differs on foot and in the air
+		if ( this.mode !== g.mode || this.keys.size > 0 || this.pushing || this.movePointer !== null || this.stick.y !== 0 ) return void ( this.glide = null );
+		// progress is the speed toward where it is going: sliding along a wall it ran into is none
+		const walking = this.mode === 'walk';
+		const along = Math.max( 0, walking ? this.velocity.x * g.dir.x + this.velocity.z * g.dir.z : this.velocity.dot( g.dir ) );
+		g.age += dt;
+		g.left -= along * dt;
+		g.stuck = g.age > 0.4 && along < 0.5 ? g.stuck + dt : 0;
+		// stopping takes a moment (walking is quick about it), so it lets go a little before the end
+		if ( g.left <= along * ( walking ? 0.08 : 0.25 ) || g.stuck > 0.25 ) this.glide = null;
+
+	}
+
+	/** A double click: set off toward what is under the pointer, part of the way. */
+	private goToward( clientX: number, clientY: number ) {
+
+		if ( this.settling ) return;
+		const box = this.dom.getBoundingClientRect();
+		const dir = new Vector3( ( clientX - box.left ) / box.width * 2 - 1, - ( clientY - box.top ) / box.height * 2 + 1, 0.5 )
+			.unproject( this.camera ).sub( this.camera.position ).normalize();
+		const hit = this.world.cast( this.camera.position, dir );
+		const walking = this.mode === 'walk';
+		if ( walking ) dir.setY( 0 );
+		const flat = Math.hypot( dir.x, dir.z );
+		if ( walking && flat < 0.2 ) return; // aimed at your feet or straight up: no way to go
+		if ( walking ) dir.divideScalar( flat );
+		// part of the way there, never all of it, so you end up standing short of the wall or the lamp post
+		const away = hit ? ( walking ? hit.distance * flat : hit.distance ) : Infinity;
+		// flying speed grows with height (see fly), so the most is a few seconds of it, not a distance
+		const most = walking ? GLIDE_MOST : GLIDE_SECONDS * MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
+		const left = hit ? MathUtils.clamp( away * GLIDE_SHARE, GLIDE_LEAST, most ) : Math.min( walking ? GLIDE_BLIND : GLIDE_BLIND_FLYING, most );
+		this.glide = { dir, left, age: 0, stuck: 0, mode: this.mode };
 
 	}
 
@@ -319,6 +402,7 @@ export class Player {
 		const probe = this.tmp.set( position.x, feet, position.z );
 		// in the air the feet may already be below a surface, so look down from eye level
 		let ground = this.trusted( world.groundBelow( probe, this.grounded ? STEP : EYE ) );
+		if ( ground !== null ) this.groundFrom = 'below';
 
 		if ( ground === null ) {
 
@@ -328,10 +412,12 @@ export class Player {
 
 				// no ground we can believe in: stay put until the tiles arrive
 				velocity.y = 0;
+				this.groundFrom = 'held';
 				return;
 
 			}
 
+			this.groundFrom = 'top';
 			ground = feet = top;
 			this.grounded = true;
 			velocity.y = 0;
@@ -383,7 +469,7 @@ export class Player {
 		position.y = feet + EYE;
 		this.heightAboveGround = feet - ground;
 		this.lastGround = ground;
-		this.fovTarget = BASE_FOV + ( a.fast && a.z > 0 && this.grounded ? 5 : 0 );
+		this.fovTarget = BASE_FOV;
 
 	}
 
@@ -549,6 +635,7 @@ export class Player {
 		const ground = this.trusted( world.groundBelow( position ) );
 		if ( ground !== null ) {
 
+			this.groundFrom = 'below';
 			if ( position.y < ground + FLY_CLEARANCE ) {
 
 				position.y = ground + FLY_CLEARANCE;
@@ -579,6 +666,7 @@ export class Player {
 
 				position.y = topSurface + FLY_CLEARANCE;
 				velocity.y = Math.max( velocity.y, 0 );
+				this.groundFrom = 'top';
 				this.heightAboveGround = FLY_CLEARANCE;
 				this.lastGround = topSurface;
 
@@ -587,6 +675,7 @@ export class Player {
 				// Nothing reliable to measure against: the tiles here are still loading. Hold the
 				// last known ground level so you cannot sink through the world in the meantime.
 				this.groundMisses ++;
+				this.groundFrom = 'held';
 				if ( position.y < this.lastGround + FLY_CLEARANCE ) {
 
 					position.y = this.lastGround + FLY_CLEARANCE;
@@ -600,8 +689,8 @@ export class Player {
 
 		}
 
-		// the view widens as you pick up speed
-		this.fovTarget = flyFov( this.heightAboveGround ) + 12 * MathUtils.clamp( velocity.length() / ( base * 3 ), 0, 1 );
+		// the view depends on your height alone: nothing widens or tilts as you speed up or turn
+		this.fovTarget = flyFov( this.heightAboveGround );
 
 	}
 
@@ -616,14 +705,12 @@ export class Player {
 		const dGround = this.lastGround - p.y;
 		this.world.reanchorOn( p, dir );
 		this.lastGround = p.y + dGround;
-		const before = this.yaw;
 		this.yaw = Math.atan2( - dir.x, - dir.z );
-		this.yawBefore += this.yaw - before;
 		this.renderY = p.y + dy;
 
 	}
 
-	private applyCamera( dt: number, yawRate: number ) {
+	private applyCamera( dt: number ) {
 
 		const cam = this.camera;
 
@@ -631,7 +718,6 @@ export class Player {
 		if ( this.mode === 'walk' && this.grounded ) {
 
 			this.renderY += ( this.position.y - this.renderY ) * ( 1 - Math.exp( - dt * 18 ) );
-			this.bob += Math.hypot( this.velocity.x, this.velocity.z ) * dt * 2.2;
 
 		} else {
 
@@ -639,25 +725,16 @@ export class Player {
 
 		}
 
-		// bank into turns when flying (not when the device asks for less motion)
-		this.yawRate += ( yawRate - this.yawRate ) * ( 1 - Math.exp( - dt * 8 ) );
-		const a = this.axes();
-		const calm = LESS_MOTION.matches;
-		const bank = this.mode === 'fly' && ! this.settling && ! calm
-			? MathUtils.clamp( this.yawRate * 0.22, - 0.6, 0.6 ) - a.x * 0.1
-			: 0;
-		this.roll += ( bank - this.roll ) * ( 1 - Math.exp( - dt * 4 ) );
-		// the view without any widening for speed (arriving somewhere you start high up, unless you
-		// are coming back to where you left off on foot)
+		// No banking into turns, no widening with speed and no bounce in your step: the view only
+		// turns where you turn it, which is easier on the stomach. (Arriving somewhere you start high
+		// up, unless you are coming back to where you left off on foot.)
 		const still = this.mode !== 'fly' ? BASE_FOV
 			: this.settling ? ( this.resume?.mode === 'walk' ? BASE_FOV : FLY_FOV )
 				: flyFov( this.heightAboveGround );
-		this.ease( this.settling || calm ? still : this.fovTarget, dt );
+		this.ease( this.settling ? still : this.fovTarget, dt );
 
-		// a slight bounce in your step
-		const bounce = this.mode === 'walk' && this.grounded && ! calm ? Math.sin( this.bob ) * 0.03 : 0;
-		cam.position.set( this.position.x, this.renderY + bounce, this.position.z );
-		cam.rotation.set( this.pitch, this.yaw, this.roll );
+		cam.position.set( this.position.x, this.renderY, this.position.z );
+		cam.rotation.set( this.pitch, this.yaw, 0 );
 		cam.updateMatrixWorld();
 
 	}
@@ -843,9 +920,29 @@ export class Player {
 		window.addEventListener( 'blur', letGo );
 		document.addEventListener( 'visibilitychange', () => { if ( document.hidden ) letGo(); } );
 
-		// the wheel does nothing over the scene, and a trackpad's pinch (sent as a wheel with Ctrl)
-		// zooms the page nowhere, over the panels and boxes included
-		dom.addEventListener( 'wheel', e => e.preventDefault(), { passive: false } );
+		// A two-finger swipe on a trackpad (or a mouse wheel) over the scene moves you: swiping up
+		// goes forward and down goes back, swiping right steps aside to the right and left to the left
+		// (with the computer's own "natural" scrolling; the other way round if that is switched off).
+		// A swipe is a stream of wheel events, each pushing for a moment, so it moves as smoothly as
+		// the swipe. Fingers drift a little off straight, so a swipe's weaker direction is ignored
+		// unless it is nearly as strong as the other.
+		dom.addEventListener( 'wheel', e => {
+
+			e.preventDefault();
+			if ( e.ctrlKey ) return; // a pinch: zooms nothing
+			const lines = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+			let along = e.deltaY * lines, across = e.deltaX * lines;
+			if ( Math.abs( along ) < Math.abs( across ) * WHEEL_STRAY ) along = 0;
+			if ( Math.abs( across ) < Math.abs( along ) * WHEEL_STRAY ) across = 0;
+			this.wheelPush = MathUtils.clamp( along / WHEEL_FULL, - 1, 1 );
+			this.wheelSide = MathUtils.clamp( - across / WHEEL_FULL, - 1, 1 );
+			this.wheelFast = Math.max( Math.abs( along ), Math.abs( across ) ) >= WHEEL_FAST;
+			this.wheelUntil = performance.now() + WHEEL_HOLD;
+
+		}, { passive: false } );
+		// a double click goes part of the way toward what was clicked on (a touch screen has its thumb stick)
+		dom.addEventListener( 'dblclick', e => { if ( ! this.touching && e.button === 0 ) this.goToward( e.clientX, e.clientY ); } );
+		// a trackpad's pinch (sent as a wheel with Ctrl) zooms the page nowhere, over the panels and boxes included
 		window.addEventListener( 'wheel', e => { if ( e.ctrlKey ) e.preventDefault(); }, { passive: false } );
 
 	}
