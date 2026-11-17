@@ -18,14 +18,14 @@
  * - it could see the point: a depth cube rendered from the panorama's centre, from every tile in
  *   use (in view or not), says nothing stood in between;
  * - the point faces it rather than being seen edge-on;
- * - the point is within FADE_FAR of it, fading out from FADE_NEAR;
+ * - the point is within PAINT_RANGE of it;
  * - it is not straight down (that is the Street View car itself).
  * Of those, the nearest one paints the point alone: mixing photos taken from different places
  * doubles every edge that does not lie exactly on the mesh.
  */
 import {
-	Color, CubeCamera, DoubleSide, HalfFloatType, LinearFilter, MathUtils, Mesh, NoColorSpace, RGBAFormat, SRGBColorSpace,
-	ShaderMaterial, Texture, Vector3, WebGLCubeRenderTarget, type Material, type Object3D, type Scene, type WebGLRenderer,
+	AdditiveBlending, CanvasTexture, Color, CubeCamera, DoubleSide, HalfFloatType, LinearFilter, MathUtils, Mesh, NoColorSpace, RGBAFormat, SRGBColorSpace,
+	ShaderMaterial, Sprite, SpriteMaterial, Texture, Vector3, WebGLCubeRenderTarget, type Material, type Object3D, type Scene, type WebGLRenderer,
 } from 'three';
 import type { World } from './world';
 import { quality } from './quality';
@@ -70,8 +70,15 @@ const CHOOSE_FROM = SLOTS;
 const MOST_DETAILS = 4 * CHOOSE_FROM;
 /** metres of advantage a panorama already showing has over a newcomer */
 const KEEP = 8;
-/** A panorama's photograph fades out between these distances from it, in metres. */
-const FADE_NEAR = 20, FADE_FAR = 40;
+/**
+ * A panorama's photograph paints points up to this far from where it was taken, in metres, and
+ * nothing beyond. A photo is about 516 / distance pixels a metre on a computer (half that on a
+ * phone), against the aerial texture's 5 or so, but the farther a point, the worse it lines up
+ * with the rough mesh.
+ */
+const PAINT_RANGE = 40;
+/** Width of an orb, metres. */
+const ORB_SIZE = 2.5;
 /** Seconds for a panorama to fade in or out. */
 const FADE_TIME = 0.8;
 /**
@@ -82,10 +89,10 @@ const REFUSED_WAIT = 60000, REFUSED_DAY_WAIT = 10 * 60000;
 /** The depth cubes are redrawn at most this often while tiles are changing, milliseconds. */
 const DEPTH_EVERY = quality.phone ? 1500 : 600;
 /**
- * How far a depth cube looks (metres). A photo paints nothing beyond FADE_FAR, so only something
+ * How far a depth cube looks (metres). A photo paints nothing beyond PAINT_RANGE, so only something
  * nearer than that can hide a point from it: everything further is left out of the cube.
  */
-const DEPTH_REACH = FADE_FAR + 10;
+const DEPTH_REACH = PAINT_RANGE + 10;
 /**
  * A look-up that could not be made (ground not loaded yet, or an error) is tried again after this,
  * milliseconds, doubling with each failure in a row up to RETRY_MOST.
@@ -201,7 +208,7 @@ function slotCode( i: number ) {
 			float azimuth = atan( - dir.x, dir.z ) / ( 2.0 * PI );
 			float elevation = asin( clamp( dir.y, - 1.0, 1.0 ) ) + svPitch[ ${ i } ];
 			float below = smoothstep( - 1.15, - 0.95, elevation );
-			float w = svStrength[ ${ i } ] * visible * facing * below * ( 1.0 - smoothstep( ${ FADE_NEAR.toFixed( 1 ) }, ${ FADE_FAR.toFixed( 1 ) }, d ) );
+			float w = svStrength[ ${ i } ] * visible * facing * below * step( d, ${ PAINT_RANGE.toFixed( 1 ) } );
 			vec2 uv = vec2( fract( azimuth - svHeading[ ${ i } ] / 360.0 + 0.5 ), 0.5 - elevation / PI );
 			// nothing to paint where the photo's top rows were not downloaded
 			w *= smoothstep( svTop[ ${ i } ], svTop[ ${ i } ] + 0.01, uv.y );
@@ -245,9 +252,15 @@ export class StreetView {
 	private noWorker = typeof OffscreenCanvas === 'undefined';
 	private nextJob = 0;
 	private lastQuery = new Vector3( Infinity, 0, 0 );
+	/** Where photos in memory were last chosen from, while flying. */
+	private lastCached = new Vector3( Infinity, 0, 0 );
 	private busy = false;
 	private nearest: string | null = null;
 	private slots: Slot[] = [];
+	/** A glowing orb at the centre of each slot's panorama, where its photo was taken from. */
+	private orbs: Sprite[] = [];
+	/** Whether the orbs are shown (the debug panel switches them on). */
+	showOrbs = false;
 	private cubeCamera: CubeCamera;
 	private distance: ShaderMaterial;
 	private depthCenter = { value: new Vector3() };
@@ -288,6 +301,31 @@ export class StreetView {
 
 		}
 
+		// a soft glow, painted once: a bright core fading to nothing (no mipmaps, as with every texture)
+		const glow = document.createElement( 'canvas' );
+		glow.width = glow.height = 128;
+		const g = glow.getContext( '2d' )!;
+		const ramp = g.createRadialGradient( 64, 64, 0, 64, 64, 64 );
+		ramp.addColorStop( 0, 'rgba(255,255,255,1)' );
+		ramp.addColorStop( 0.18, 'rgba(255,225,150,0.95)' );
+		ramp.addColorStop( 0.45, 'rgba(255,170,60,0.35)' );
+		ramp.addColorStop( 1, 'rgba(255,140,0,0)' );
+		g.fillStyle = ramp;
+		g.fillRect( 0, 0, 128, 128 );
+		const glowTexture = new CanvasTexture( glow );
+		glowTexture.generateMipmaps = false;
+		glowTexture.minFilter = LinearFilter;
+		glowTexture.colorSpace = SRGBColorSpace;
+		for ( let i = 0; i < SLOTS; i ++ ) {
+
+			const orb = new Sprite( new SpriteMaterial( { map: glowTexture, blending: AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false } ) );
+			orb.visible = false;
+			orb.renderOrder = 10;
+			this.orbs.push( orb );
+			scene.add( orb );
+
+		}
+
 		this.cubeCamera = new CubeCamera( 0.5, DEPTH_REACH, this.slots[ 0 ].cube );
 		this.distance = new ShaderMaterial( {
 			uniforms: { center: this.depthCenter },
@@ -320,7 +358,7 @@ export class StreetView {
 			: this.refused ? `waiting ${ s( this.refusedUntil - now ) }: Google asked for fewer requests`
 				: this.downloading ? `downloading: ${ this.wantedList.filter( m => ! this.slots.some( s => s.meta?.panoId === m.panoId ) ).length } photos to go`
 					: this.busy ? 'searching'
-						: ! this.walking ? 'paused: only while walking'
+						: ! this.walking ? 'flying: only photos already held are shown'
 							: now < this.retryAt ? `trying again in ${ s( this.retryAt - now ) }`
 								: 'up to date';
 		return {
@@ -401,15 +439,28 @@ export class StreetView {
 		this.wasRefused = refused;
 		let freed = false;
 		const shown: boolean[] = [];
+		const pulse = 0.9 + 0.1 * Math.sin( performance.now() / 400 );
 		this.slots.forEach( ( s, i ) => {
 
+			const orb = this.orbs[ i ];
+			orb.visible = false;
 			if ( ! s.meta ) return;
 			// the world is re-anchored as you travel: place each panorama afresh from its latitude and longitude
 			this.place( s.meta.lat, s.meta.lng, s.ground + CAMERA_HEIGHT, uniforms.svCenter.value[ i ] );
-			const near = uniforms.svCenter.value[ i ].distanceTo( position ) < FADE_FAR + 20;
+			const near = uniforms.svCenter.value[ i ].distanceTo( position ) < PAINT_RANGE + 20;
 			shown[ i ] = s.wanted && near;
 			s.strength = MathUtils.clamp( s.strength + ( s.wanted && near && s.depthReady ? dt : - dt ) / FADE_TIME, 0, 1 );
 			uniforms.svStrength.value[ i ] = s.strength * s.strength * ( 3 - 2 * s.strength );
+			// the orb, if switched on, marks where the photo was taken from, fading as the photo does
+			if ( this.showOrbs && s.strength > 0 ) {
+
+				orb.visible = true;
+				orb.position.copy( uniforms.svCenter.value[ i ] );
+				orb.scale.setScalar( ORB_SIZE * pulse );
+				orb.material.opacity = s.strength;
+
+			}
+
 			// faded right out and no longer wanted: the slot is free again
 			if ( s.strength === 0 && ! s.wanted ) { this.free( i ); freed = true; }
 
@@ -444,6 +495,8 @@ export class StreetView {
 
 		}
 
+		// flying: nothing is asked of Google, but photos already held in memory are still put where they fit
+		if ( this.enabled && ! settled && Math.hypot( position.x - this.lastCached.x, position.z - this.lastCached.z ) >= REQUERY ) { this.lastCached.copy( position ); this.lastQuery.set( Infinity, 0, 0 ); this.chooseHeld( position ); } // landing then looks afresh
 		if ( ! this.enabled || ! settled || this.busy || this.refused || now < this.retryAt || Math.hypot( position.x - this.lastQuery.x, position.z - this.lastQuery.z ) < REQUERY ) return;
 		this.lastQuery.copy( position );
 		this.busy = true;
@@ -662,6 +715,36 @@ export class StreetView {
 	}
 
 	/**
+	 * `choose` without Google: while flying, the nearest photos already in memory (showing, or kept)
+	 * are wanted, so flying low over streets walked earlier shows them again at no cost. Nothing is
+	 * searched for or downloaded; only the details and photos this visit already has are used.
+	 */
+	private chooseHeld( position: Vector3 ) {
+
+		const street = this.world.groundBelow( position, 0.5 );
+		if ( street === null || position.y - street > 30 ) return;
+		for ( const s of this.slots ) {
+
+			const ground = s.meta ? this.groundAt( s.meta, street ) : null;
+			if ( ground !== null ) s.ground = ground;
+
+		}
+
+		const here = this.world.toLatLng( position );
+		const held = ( id: string ) => this.kept.has( id ) || this.slots.some( s => s.meta?.panoId === id );
+		const wanted = [ ...this.metaCache.values() ].filter( m => byGoogle( m ) && held( m.panoId ) )
+			.map( m => ( { m, d: this.place( m.lat, m.lng, here.height, new Vector3() ).distanceTo( position ) } ) )
+			.filter( p => p.d < PAINT_RANGE + 20 )
+			.sort( ( a, b ) => a.d - b.d ).slice( 0, SLOTS ).map( p => p.m );
+		const ids = new Set( wanted.map( m => m.panoId ) );
+		for ( const s of this.slots ) s.wanted = !! s.meta && ids.has( s.meta.panoId );
+		this.wantedList = wanted;
+		this.street = street;
+		this.fill();
+
+	}
+
+	/**
 	 * Load each wanted panorama not yet in a slot: from memory if it was seen before, otherwise
 	 * downloaded, unless you are flying, Google is asking for fewer requests, or its pieces failed a
 	 * short while ago.
@@ -787,7 +870,9 @@ export class StreetView {
 
 		if ( on === this.enabled ) return;
 		this.enabled = on;
+		// switching on looks again at once, whether walking (a search) or flying (the photos held)
 		this.lastQuery.set( Infinity, 0, 0 );
+		this.lastCached.set( Infinity, 0, 0 );
 		if ( on ) return;
 		for ( const s of this.slots ) s.wanted = false;
 

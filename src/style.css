@@ -201,12 +201,15 @@ body.looking #view { cursor: none; }
 .credits img { height: 18px; margin: 0 8px 0 10px; vertical-align: -4px; }
 /* the debug figures (P): a few lines above the credits */
 .credits .debug { margin-bottom: 4px; font-variant-numeric: tabular-nums; line-height: 1.4; }
-/* its last line is clickable: it sets the daily limit */
-.credits .debug div:last-child { pointer-events: auto; cursor: pointer; }
+.credits .debug .warn { color: #ffb74d; }
+.credits .debug .bad { color: #ff6b5e; }
+/* on a touch screen the figures go along the left, clear of the buttons on the right, and wrap */
+body.touch .credits .debug { position: fixed; left: calc(12px + var(--sl)); bottom: calc(40px + var(--sb)); width: calc(100vw - 110px - var(--sl) - var(--sr)); text-align: left; font-size: 10px; margin: 0; }
 
 .banner {
 	display: none;
-	top: 70px;
+	/* below the go-to box, which is up to about 100px tall at the top right */
+	top: calc(120px + var(--st));
 	left: 50%;
 	transform: translateX(-50%);
 	max-width: min(560px, 90vw);
@@ -335,6 +338,8 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
 	.goto .forget { flex: 1; flex-basis: auto; }
 	/* the hint would sit on top of the open box */
 	.goto.open ~ .hint { display: none; }
+	/* the open go-to box fills the screen below the compass: the message goes to the bottom instead */
+	.goto.open ~ .banner { top: auto; bottom: calc(40px + var(--sb)); }
 }
 
 @media (max-width: 640px), (max-height: 500px) {
@@ -357,6 +362,7 @@ body.touch .hint { bottom: auto; top: max(calc(104px + var(--st)), 30%); max-wid
    column: ▼ goes beside ▲ so the stack stays clear of the status panel */
 @media (max-height: 500px) {
 	body.touch .pad { display: grid; grid-template-columns: 56px 56px; }
+	body.touch .credits .debug { width: calc(100vw - 170px - var(--sl) - var(--sr)); }
 	.pad button.mode { grid-area: 1 / 2; margin-bottom: 0; }
 	.pad .up { grid-area: 2 / 2; }
 	.pad .down { grid-area: 2 / 1; }

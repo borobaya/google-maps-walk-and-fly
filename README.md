@@ -136,7 +136,7 @@ Where you begin, in order:
 3. Your own location, if you let the browser share it.
 4. The Tower of London.
 
-Your location, your last position, whether Street View is on, and the debug panel's count of today's requests to Google (and the daily limit you give it) stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
+Your location, your last position, whether Street View is on, and the debug panel's count of today's requests to Google stay in your browser. They are not sent anywhere, except that Google necessarily sees which map tiles you load. Note that the address bar shows your coordinates, so starting at home and then sharing the link shares where you live.
 
 To search by place name as well, also enable the **Maps JavaScript API** and **Geocoding API** on your key (and add them to its API restrictions). Without them the box still accepts coordinates.
 
@@ -146,7 +146,7 @@ Up close, Google's 3D buildings are soft (see [Limits](#limits-worth-knowing)). 
 
 - **Off to begin with.** Your choice is remembered on the device. Its code is only downloaded the first time you switch it on.
 - **Only on foot.** It looks for photos as you walk, every few metres. Flying, it uses only the photos it already has.
-- **Nearest first.** Up to six photos are shown at once, the ones taken nearest you; each wall shows the nearest photo that could see it. They fade in as they arrive and out as you walk on.
+- **Nearest first.** Up to six photos are shown at once, the ones taken nearest you; each wall shows the nearest photo that could see it, out to 40 m from where the photo was taken. They fade in as they arrive and out as you walk on.
 - **Credited on screen.** While any photo shows, a short line above Google's credits gives the photo's copyright and a **Report problem** link, both of which Street View requires.
 - **Kept only in memory.** Photos you have seen are kept while the page is open (30 on a computer, 10 on a phone), so walking back costs nothing, and switching off keeps them. Nothing is saved on the device except Street View's session (a token, not imagery), which lets your browser's own cache reuse what it may for as long as Google allows.
 
@@ -178,10 +178,10 @@ Built without a key (as the workflow does), the site asks each visitor for their
   - frame rate and the slowest recent frame
   - the 3D tiles drawn, kept and loading
   - what the ground under you was measured against, and how detailed that tile is
-  - what Street View is doing
+  - what Street View is doing, with a glowing orb in the scene at each photo's centre, where it was taken from
   - how many requests went to Google this visit, and today in this browser
 
-  Google doesn't say how much of the day's quota is left, so this is an estimate: tap the last line and give it your key's "Street View Tiles requests per day" figure (from the Cloud Console) and it shows how much of that this browser has used today, counting from midnight Pacific time, when Google's daily quotas reset. It sees only this browser's requests (other tabs count too), not other devices or anything else using the key. The time Street View was last refused is shown as well.
+  Google doesn't say how much of a quota is left, so these are estimates from this browser's own requests, set against Google's default limits (if you changed a limit in the Cloud Console, the percentages will be off) and named as the Cloud Console names them: "3D Tiles renderer requests per minute" (12,000), "Street View Tiles requests per minute" (6,000), "3D Tiles root requests per day" (10,000) and "Street View Tiles requests per day" (15,000). The daily counts start at midnight Pacific time, when Google's daily quotas reset. They see only this browser's requests (other tabs count too), not other devices or anything else using the key. The time Street View was last refused is shown as well.
 - `vite.config.ts` writes the page's content security policy: the hosts it may load from and talk to. A new host has to be added there, deliberately.
 
 Built with [three.js](https://threejs.org), [Vite](https://vite.dev) and TypeScript. `npm run build` type-checks and produces a static site in `dist/`; `npm run lint` checks the code with [oxlint](https://oxc.rs), including rules that use TypeScript's types (such as promises left unhandled).

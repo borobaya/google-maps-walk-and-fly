@@ -507,9 +507,17 @@ export class Hud {
 	/** @param fatal false when the world had loaded and tiles then began to fail (quota, session, network) */
 	error( message: string, fatal = true ) {
 
+		// Google's refusal codes say what is wrong; the library's message carries the code ("with status 429").
+		// Its address is left out of what is shown: it carries the key.
+		const code = /(?:status|error code) (\d{3})\b/.exec( message )?.[ 1 ];
+		message = message.replace( /"?https?:\/\/\S+/g, '…' );
+		const cause = code === '429' ? 'Google says too many requests, so a Map Tiles API quota has run out (Cloud Console > APIs & Services > Map Tiles API > Quotas: "3D Tiles renderer requests per minute" refills within a minute; "3D Tiles root requests per day" and "Street View Tiles requests per day" refill at midnight Pacific time).'
+			: code === '400' || code === '401' || code === '403' ? 'Google refused the key: check that the Map Tiles API is enabled, billing is on, and the key allows this website.'
+			: code && code.startsWith( '5' ) ? 'Google\'s servers had a problem. Try again in a minute.'
+			: 'Check your internet connection, then the key and the Map Tiles API quota.';
 		this.banner.textContent = fatal
-			? `Could not load Google 3D Tiles: ${ message }. Check the API key and that the Map Tiles API is enabled.`
-			: `Google 3D Tiles have stopped loading: ${ message }. Check your connection and the key's quota, then reload.`;
+			? `Could not load the 3D world. ${ cause } (${ message })`
+			: `Parts of the 3D world have stopped loading. ${ cause } Reload to try again. (${ message })`;
 		// a key typed in by the visitor can be replaced on the spot
 		if ( fatal && this.changeKey ) {
 

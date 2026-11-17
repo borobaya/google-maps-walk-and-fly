@@ -6,17 +6,34 @@
  *
  * Google's daily limits are counted per project, from midnight Pacific time, and it does not say
  * how much is left. Today's count is only this browser's share (other tabs add to it; other devices
- * and anything else using the key do not), so it is an estimate, set against a limit the visitor
- * gives from the Cloud Console.
+ * and anything else using the key do not), so it is an estimate, set against Google's default limits (QUOTAS).
  */
-export interface Counts { tiles: number, searches: number, details: number, pieces: number, sessions: number }
-const zero = (): Counts => ( { tiles: 0, searches: 0, details: 0, pieces: 0, sessions: 0 } );
+export interface Counts { tiles: number, roots: number, searches: number, details: number, pieces: number, sessions: number }
+const zero = (): Counts => ( { tiles: 0, roots: 0, searches: 0, details: 0, pieces: 0, sessions: 0 } );
+
+/** The limits on the key's Map Tiles API quotas, as Google sets them by default (Cloud Console > APIs & Services > Map Tiles API > Quotas). */
+export const QUOTAS = {
+	tilesPerMinute: 12000, // "3D Tiles renderer requests per minute"
+	piecesPerMinute: 6000, // "Street View Tiles requests per minute"
+	rootsPerDay: 10000, // "3D Tiles root requests per day"
+	piecesPerDay: 15000, // "Street View Tiles requests per day"
+};
+
+/** When each recent 3D tile and photo piece was asked for, for the per-minute quotas. */
+const recent = { tiles: [] as number[], pieces: [] as number[] };
+/** How many of each were asked for in the last minute, in this browser. */
+export const lastMinute = () => {
+
+	const from = performance.now() - 60000;
+	for ( const list of Object.values( recent ) ) while ( list.length && list[ 0 ] < from ) list.shift();
+	return { tiles: recent.tiles.length, pieces: recent.pieces.length };
+
+};
 
 /** This visit's. */
 export const asked = zero();
 
 const TODAY_STORE = 'walk-and-fly-requests-today';
-const LIMIT_STORE = 'walk-and-fly-photo-piece-limit';
 const SAVE_EVERY = 2000; // ms
 
 /** What was saved today, and what has been counted since. */
@@ -69,28 +86,6 @@ export const today = (): Counts => {
 
 };
 
-/** Most Street View photo pieces a day the key allows, as the visitor says (from the Cloud Console), or null. */
-export const getLimit = (): number | null => {
-
-	try {
-
-		const n = Number( localStorage.getItem( LIMIT_STORE ) );
-		return Number.isFinite( n ) && n > 0 ? n : null;
-
-	} catch { return null; }
-
-};
-
-export const setLimit = ( limit: number | null ) => {
-
-	try {
-
-		if ( limit === null ) localStorage.removeItem( LIMIT_STORE ); else localStorage.setItem( LIMIT_STORE, String( Math.round( limit ) ) );
-
-	} catch { /* storage blocked: not remembered */ }
-
-};
-
 try {
 
 	// what is stored from earlier today, so the count starts there
@@ -99,7 +94,20 @@ try {
 
 } catch { /* storage blocked */ }
 
-const count = ( kind: keyof Counts ) => { asked[ kind ] ++; unsaved[ kind ] ++; };
+const count = ( kind: keyof Counts, at: number ) => {
+
+	asked[ kind ] ++;
+	unsaved[ kind ] ++;
+	if ( kind === 'tiles' || kind === 'pieces' ) {
+
+		// kept to the last minute here, so it stays small even if the panel is never opened
+		const list = recent[ kind ];
+		list.push( at );
+		while ( list[ 0 ] < at - 60000 ) list.shift();
+
+	}
+
+};
 
 try {
 
@@ -109,11 +117,12 @@ try {
 
 			if ( ! e.name.startsWith( 'https://tile.googleapis.com/' ) ) continue;
 			const path = new URL( e.name ).pathname;
-			if ( path.startsWith( '/v1/3dtiles/' ) ) count( 'tiles' );
-			else if ( path === '/v1/streetview/panoIds' ) count( 'searches' );
-			else if ( path === '/v1/streetview/metadata' ) count( 'details' );
-			else if ( path.startsWith( '/v1/streetview/tiles/' ) ) count( 'pieces' );
-			else if ( path === '/v1/createSession' ) count( 'sessions' );
+			if ( path === '/v1/3dtiles/root.json' ) count( 'roots', e.startTime );
+			if ( path.startsWith( '/v1/3dtiles/' ) ) count( 'tiles', e.startTime );
+			else if ( path === '/v1/streetview/panoIds' ) count( 'searches', e.startTime );
+			else if ( path === '/v1/streetview/metadata' ) count( 'details', e.startTime );
+			else if ( path.startsWith( '/v1/streetview/tiles/' ) ) count( 'pieces', e.startTime );
+			else if ( path === '/v1/createSession' ) count( 'sessions', e.startTime );
 
 		}
 

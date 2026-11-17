@@ -60,15 +60,9 @@ check( 'laptop: full quality with clouds, the help panel and no touch buttons', 
 	const on = await figures();
 	check( 'P shows the debug figures above the credits', !! on && /\d+ fps/.test( on[ 0 ] ) && on.some( l => l.startsWith( '3D tiles:' ) ) && on.some( l => /^Asked of Google this visit: [\d,]{4,} 3D tiles/.test( l ) )
 		&& await page.evaluate( () => document.querySelector( '.credits' ).firstElementChild.classList.contains( 'debug' ) ), on );
-	// today's count, in this browser, against a limit given by tapping the last line
-	check( '…with today\'s count in this browser, and the limit not set yet', !! on && on.some( l => /^Today, in this browser: [\d,]{4,} 3D tiles/.test( l ) ) && on.at( - 1 ).startsWith( 'Photo pieces allowed a day: not set' ), on );
-	page.once( 'dialog', d => void d.accept( '10,000' ) );
-	await page.click( '.credits .debug div:last-child' );
-	await sleep( 900 );
-	const limited = await figures();
+	check( '…with the key\'s quotas by their Cloud Console names', !! on && on.some( l => /^3D Tiles renderer requests per minute: [\d,]+ of 12,000 \(/.test( l ) ) && on.some( l => /^3D Tiles root requests per day: \d+ of 10,000 /.test( l ) ) && /^Street View Tiles requests per day: [\d,]+ of 15,000 \(\d+%\)$/.test( on.at( - 1 ) ), on );
 	await sleep( 2500 ); // saved every two seconds
 	const stored = await page.evaluate( () => JSON.parse( localStorage.getItem( 'walk-and-fly-requests-today' ) ?? 'null' ) );
-	check( '…tapping the last line sets the daily limit, which is then shown against the count', !! limited && /^Photo pieces today: [\d,]+ of 10,000 allowed \(\d+%\)/.test( limited.at( - 1 ) ) && await page.evaluate( () => localStorage.getItem( 'walk-and-fly-photo-piece-limit' ) ) === '10000', limited );
 	check( '…and today\'s count is kept in the browser, by Pacific day, with no key in it', !! stored && /^\d{4}-\d\d-\d\d$/.test( stored.day ) && stored.counts.tiles > 1000 && ! JSON.stringify( stored ).includes( 'key' ), stored );
 	await page.keyboard.press( 'KeyP' );
 	const off = await figures();
@@ -714,6 +708,16 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 	}, LAT, LNG );
 	check( 'Street View finds the ground under a panorama 60 m behind you, out of view', behind.street !== null && behind.ground !== null && Math.abs( behind.ground - behind.street ) < 3, behind );
 	check( 'Street View: six photos chosen and shown, nearest first', shown.length === 6 && shown.every( s => s.strength > 0.99 ) && shown[ 0 ].pano === 'pano0', shown );
+	// with the debug panel on (P), an orb glows where each shown photo was taken from; off, none
+	const orbs = () => sv.evaluate( () => window.streetview.orbs.filter( o => o.visible ).length );
+	const orbsOff = await orbs();
+	await sv.mouse.click( 640, 400 );
+	await sv.keyboard.press( 'KeyP' );
+	await sleep( 600 );
+	const orbsOn = await orbs();
+	await sv.keyboard.press( 'KeyP' );
+	await sleep( 600 );
+	check( 'Street View: P puts an orb at each photo\'s centre, and takes them away again', orbsOff === 0 && orbsOn === 6 && await orbs() === 0, { orbsOff, orbsOn, after: await orbs() } );
 	const details = asked.filter( a => a.what === 'metadata' ).map( a => a.pano );
 	const searches = asked.filter( a => a.what === 'panoIds' ).length;
 	check( '…after a first search answered with nothing, tried again standing still', ! nothingOnce && searches === 2 && warnings.some( w => w.includes( 'answered the search with nothing' ) ), { searches, warnings } );
@@ -729,6 +733,23 @@ check( 'the only other sites contacted are Google\'s', [ ...hosts ].every( h => 
 	const line = await credit();
 	check( '…credited on screen with the copyright and a way to report a problem', ( line ?? '' ).startsWith( '© 2024 Google · Report problem' ) && await sv.evaluate( () => [ ...document.querySelectorAll( 'a' ) ].some( a => a.textContent === 'Report problem' && a.href.includes( 'made-up' ) ) ), line );
 	check( '…and one session, remembered on the device for next time', asked.filter( a => a.what === 'session' ).length === 1 && await sv.evaluate( () => localStorage.getItem( 'walk-and-fly-streetview-session' )?.includes( 'made-up-session' ) ), asked.filter( a => a.what === 'session' ).length );
+
+	// flying: nothing is asked of Google, but the photos already held stay (and are chosen again from memory as you move)
+	const beforeFly = asked.length;
+	await sv.evaluate( () => player.toggleMode() );
+	await sleep( 2500 );
+	const flying = await sv.evaluate( () => ( { mode: player.mode, what: window.streetview.status.what } ) );
+	check( 'Street View flying: nothing is asked of Google, and the photos already held stay shown', flying.mode === 'fly' && flying.what.startsWith( 'flying' ) && asked.length === beforeFly && ( await slots() ).filter( s => s.strength > 0.99 ).length === 6, { flying, asked: asked.slice( beforeFly ), shown: await slots() } );
+	// switched off and on again while flying, standing still: the photos held come straight back
+	await sv.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+	await sleep( 2500 );
+	const gone = ( await slots() ).filter( s => s.strength > 0.01 ).length;
+	await sv.evaluate( () => document.querySelector( '.goto .streetview' ).click() );
+	await sleep( 3500 );
+	const back = ( await slots() ).filter( s => s.strength > 0.99 ).length;
+	check( 'Street View flying, switched off and on again without moving: the photos held return, with nothing asked', gone === 0 && back === 6 && asked.length === beforeFly, { gone, back, asked: asked.slice( beforeFly ) } );
+	await sv.evaluate( () => player.toggleMode() );
+	await sleep( 500 );
 
 	// switched off: the photos fade and the credit goes with them, nothing more is asked while walking on
 	await sv.evaluate( () => document.querySelector( '.goto .streetview' ).click() );

@@ -293,6 +293,7 @@ async function suite( engine ) {
 		const refusal = await page.waitForSelector( '.banner.show', { timeout: 30000 * SLOW } )
 			.then( n => n.evaluate( e => ( { text: e.innerText, button: e.querySelector( 'button' )?.textContent } ) ) ).catch( () => null );
 		check( 'a key Google turns down is reported, with a way to enter another', !! refusal && refusal.text.includes( 'Google' ) && refusal.button === 'Enter a different key', refusal );
+		check( '…and what it says leaves the key out', !! refusal && ! refusal.text.includes( DUMMY ), refusal );
 
 		page = await p.open();
 		check( 'a fresh visit does not ask again', await startsWithoutAsking( page ) );
