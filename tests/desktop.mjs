@@ -93,6 +93,15 @@ check( 'laptop: full quality with clouds, the help panel and no touch buttons', 
 		right: ( b.x - a.x ) * Math.cos( yaw ) + ( b.z - a.z ) * - Math.sin( yaw ),
 		total: Math.hypot( b.x - a.x, b.z - a.z ),
 	} );
+	// flying speed is the height above the ground each second: low down, a swipe does not carry the scene past its re-anchoring
+	await page.evaluate( () => {
+
+		const here = world.toLatLng( player.position );
+		player.teleport( here.lat, here.lng, { height: here.height - player.heightAboveGround + 40, heading: player.heading, pitch: 0, mode: 'fly' } );
+
+	} );
+	await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+	await sleep( 2500 );
 	const swipe = async deltaY => { for ( let i = 0; i < 12; i ++ ) { await page.mouse.wheel( { deltaY } ); await sleep( 50 ); } await sleep( 900 ); };
 	await page.mouse.move( 640, 400 );
 	const s0 = await state();
@@ -218,6 +227,10 @@ r = await hold( [ 'KeyW' ], 400 );
 const up = r.tilted;
 r = await hold( [ 'KeyS' ], 400 );
 check( 'W and S look up and down', up > 0.05 && r.tilted < - 0.05, [ + up.toFixed( 2 ), + r.tilted.toFixed( 2 ) ] );
+await page.evaluate( () => { player.pitch = - 0.6; } );
+r = await hold( [ 'ArrowUp' ], 1000 );
+check( 'flying forward while looking down keeps your height', r.moved > 3 && Math.abs( r.rose ) < 1, { moved: + r.moved.toFixed( 1 ), rose: + r.rose.toFixed( 2 ) } );
+await sleep( 1200 );
 r = await hold( [ 'Space' ], 1500 );
 check( 'Space climbs', r.rose > 3, + r.rose.toFixed( 1 ) );
 await sleep( 800 );
@@ -470,6 +483,117 @@ await sleep( 300 );
 	if ( ( await state() ).mode !== 'fly' ) await page.keyboard.press( 'KeyF' );
 	const flying = await turn();
 	check( 'a fast turn while flying does not bank or widen the view', flying.mode === 'fly' && Math.abs( flying.roll ) < 0.01 && Math.abs( flying.widened ) < 1, flying );
+
+}
+
+// flying: looking down never changes your height, a double click keeps the line clicked, and hovering costs little
+{
+
+	const flatState = () => page.evaluate( () => ( { x: player.position.x, y: player.position.y, z: player.position.z, mode: player.mode } ) );
+	const rise = ( a, b ) => ( { moved: Math.hypot( b.x - a.x, b.z - a.z ), rose: b.y - a.y } );
+	const goUp = async ( height, pitch, at = null ) => {
+
+		await page.evaluate( ( height, pitch, at ) => {
+
+			const here = world.toLatLng( player.position );
+			player.teleport( at?.lat ?? here.lat, at?.lng ?? here.lng, { height: here.height - player.heightAboveGround + height, heading: player.heading, pitch, mode: 'fly' } );
+
+		}, height, pitch, at );
+		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+		await sleep( 2500 );
+
+	};
+	await goUp( 300, - 0.6 );
+	await page.mouse.click( 640, 400 );
+	await page.mouse.move( 640, 400 );
+
+	// a swipe goes level too
+	const w0 = await flatState();
+	for ( let i = 0; i < 12; i ++ ) { await page.mouse.wheel( { deltaY: 40 } ); await sleep( 50 ); }
+	await sleep( 900 );
+	const swiped = rise( w0, await flatState() );
+	check( 'a swipe while looking down keeps your height', swiped.moved > 3 && Math.abs( swiped.rose ) < 1, swiped );
+
+	// a double click on the ground below goes down the line clicked, not flatter
+	await sleep( 1500 );
+	const g0 = await flatState();
+	await page.mouse.click( 640, 400, { count: 2 } );
+	const dir = await page.evaluate( () => player.glide ? { x: player.glide.dir.x, y: player.glide.dir.y, z: player.glide.dir.z } : null );
+	await page.waitForFunction( () => ! player.glide, { timeout: 20000 } ).catch( () => {} );
+	await sleep( 1500 );
+	const g1 = await flatState();
+	const way = { x: g1.x - g0.x, y: g1.y - g0.y, z: g1.z - g0.z };
+	const length = Math.hypot( way.x, way.y, way.z );
+	const cos = dir ? ( way.x * dir.x + way.y * dir.y + way.z * dir.z ) / ( length || 1 ) : 0;
+	check( 'a double click down at the ground goes along the line clicked', !! dir && dir.y < - 0.3 && length > 20 && cos > 0.97, { dir, way, cos: + cos.toFixed( 3 ) } );
+
+	// hovering asks the world few questions (the clearance rays run ten times a second, not every frame), moving asks them all
+	await sleep( 1500 );
+	const rays = ms => page.evaluate( ms => new Promise( done => {
+
+		let n = 0, frames = 0;
+		const cast = world.cast;
+		world.cast = function ( ...args ) { n ++; return cast.apply( this, args ); };
+		const count = () => { frames ++; if ( performance.now() - t0 < ms ) requestAnimationFrame( count ); };
+		const t0 = performance.now();
+		requestAnimationFrame( count );
+		setTimeout( () => { world.cast = cast; done( { perFrame: + ( n / frames ).toFixed( 2 ), frames } ); }, ms + 50 );
+
+	} ), ms );
+	const hovering = await rays( 1500 );
+	await page.keyboard.down( 'ArrowUp' );
+	const moving = await rays( 1500 );
+	await page.keyboard.up( 'ArrowUp' );
+	check( 'hovering casts far fewer rays per frame than flying', hovering.perFrame < 3 && moving.perFrame > 5, { hovering, moving } );
+
+	// and hovering against a wall still pushes you off it, within a fraction of a second
+	let found = null;
+	for ( const height of [ 20, 40, 70 ] ) {
+
+		await goUp( height, 0, { lat: 51.508, lng: - 0.1281 } ); // Trafalgar Square again, with buildings around it
+		found = await page.evaluate( () => {
+
+			for ( let a = 0; a < 16; a ++ ) {
+
+				player.yaw = a * Math.PI / 8;
+				const hit = world.cast( player.position, player.position.clone().set( - Math.sin( player.yaw ), 0, - Math.cos( player.yaw ) ), 120 );
+				if ( hit ) return { yaw: player.yaw, distance: hit.distance };
+
+			}
+			return null;
+
+		} );
+		if ( found ) break;
+
+	}
+	if ( found ) {
+
+		// (a finer tile may swap in under it while it hovers there, moving the wall: it is tried up to three times)
+		const after = await page.evaluate( async found => {
+
+			player.yaw = found.yaw;
+			let pushed = 0;
+			for ( let attempt = 0; attempt < 3 && ! ( pushed > 0.5 ); attempt ++ ) {
+
+				const ahead = player.position.clone().set( - Math.sin( found.yaw ), 0, - Math.cos( found.yaw ) );
+				const hit = world.cast( player.position, ahead, 150 );
+				if ( ! hit ) break;
+				player.position.addScaledVector( ahead, hit.distance - 0.3 );
+				player.velocity.set( 0, 0, 0 );
+				const start = player.position.clone();
+				await new Promise( r => setTimeout( r, 500 ) );
+				// how far it has been pushed back from the wall: it should be the 0.7 m that makes up a metre
+				pushed = + ( - player.position.clone().sub( start ).dot( ahead ) ).toFixed( 2 );
+
+			}
+			return pushed;
+
+		}, found );
+		check( 'hovering 0.3 m from a wall is pushed back out to a metre', after > 0.5 && after < 1.5, { found, pushedBack: after } );
+
+	} else check( 'hovering 0.3 m from a wall is pushed back out to a metre', false, 'no wall found within 120 m at 20, 40 or 70 m up' );
+	// back up high and level, where the checks that follow found you before this one
+	await goUp( 300, 0 );
 
 }
 

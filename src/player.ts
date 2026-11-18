@@ -67,15 +67,21 @@ const FEELER = 60; // how far to look for nearby walls, metres
 const LIFT_START = 0.25; // going straight up or down begins at this share of flying speed...
 const LIFT_RAMP = 1.5; // ...and reaches all of it after being held this long, seconds
 const DOUBLE_TAP = 0.3; // seconds between Space presses that toggles flying
+const TAP_SLOP = 12; // pixels a finger may wander and still be a tap
+const TAP_TIME = 0.3; // longest a tap may last, seconds
+const DOUBLE_TAP_GAP = 0.4; // longest between the two taps of a double tap, seconds
+const DOUBLE_TAP_APART = 40; // furthest apart the two taps may land, pixels
 const WHEEL_FULL = 15; // pixels of a two-finger swipe, in one event, for full pace
 const WHEEL_FAST = 60; // a harder swipe than this runs (on foot) or boosts (flying), as a long thumb drag does
 const WHEEL_STRAY = 0.4; // a swipe's weaker direction counts only above this share of the stronger one
 const WHEEL_HOLD = 120; // ms a wheel event keeps pushing, so a swipe's stream of them is one smooth movement
 /** A double click goes this share of the way to what was clicked on, between these limits (metres), walking. */
-const GLIDE_SHARE = 0.5, GLIDE_LEAST = 1.5, GLIDE_MOST = 15;
+const GLIDE_SHARE = 0.5, GLIDE_LEAST = 1.5, GLIDE_MOST = 60;
+const FLY_SIDE = 0.75; // flying sideways is this share of flying forward
+const FLY_SPEED_LEAST = 15, FLY_SPEED_MOST = 5000; // flying speed is your height above the ground each second, within these (m/s)
 const GLIDE_BLIND = 8; // metres walked when the click was on the sky, or nothing was hit
 const GLIDE_BLIND_FLYING = 40;
-const GLIDE_SECONDS = 3; // flying, at most this long at the usual flying speed, however far off the click was
+const GLIDE_HEIGHTS = 3; // flying, at most this many times your height above the ground (and never under GLIDE_MOST), however far off the click was
 
 const UP = new Vector3( 0, 1, 0 );
 
@@ -130,6 +136,8 @@ export class Player {
 	private fovRate = 0;
 	private liftTime = 0;
 	private liftSign = 0;
+	/** Seconds spent hovering since the last clearance check (moving counts as due). */
+	private stillFor = 1;
 	private resume: Resume | null = null;
 	/** A two-finger swipe (sent as wheel events): how hard it pushes you forward (+) or back (-), and until when. */
 	private wheelPush = 0;
@@ -141,6 +149,11 @@ export class Player {
 	private glide: { dir: Vector3, left: number, age: number, stuck: number, mode: Mode } | null = null;
 	private lookPointer: number | null = null;
 	private movePointer: number | null = null;
+	/** Upright, a second finger down beside the moving one: the drag then steps aside instead of turning. */
+	private sidePointer: number | null = null;
+	/** Where the moving finger is now, for working out the stick again when the second finger comes or goes. */
+	private moveNowX = 0;
+	private moveNowY = 0;
 	private lookX = 0;
 	private lookY = 0;
 	private moveX = 0;
@@ -321,14 +334,14 @@ export class Player {
 		const sin = Math.sin( this.yaw ), cos = Math.cos( this.yaw );
 		const ahead = - d.x * sin - d.z * cos, side = d.x * cos - d.z * sin;
 		if ( this.mode === 'walk' ) return { z: ahead, x: side, y: 0 };
-		// flying: forward is along the view, which tilts with the pitch; sideways counts for half, and up is its own axis
-		const pitch = this.oneThumb ? 0 : this.pitch;
-		const z = ahead / Math.max( Math.cos( pitch ), 0.2 );
-		const y = d.y - z * Math.sin( pitch );
-		// looking steeply up or down these can come to more than 1, which the inputs are cut to: scaled
-		// together instead, so they still add up to the direction clicked
-		const most = Math.max( 1, Math.abs( z ), Math.abs( side * 2 ), Math.abs( y ) );
-		return { z: z / most, x: side * 2 / most, y: y / most };
+		// flying: forward is level, sideways is FLY_SIDE as fast, and up is its own axis, so the
+		// direction clicked is just these three
+		const z = ahead, y = d.y;
+		// sideways can come to more than 1, which the inputs are cut to: scaled together
+		// instead, so they still add up to the direction clicked
+		const sidestep = side / FLY_SIDE;
+		const most = Math.max( 1, Math.abs( sidestep ) );
+		return { z: z / most, x: sidestep / most, y: y / most };
 
 	}
 
@@ -364,8 +377,8 @@ export class Player {
 		if ( walking ) dir.divideScalar( flat );
 		// part of the way there, never all of it, so you end up standing short of the wall or the lamp post
 		const away = hit ? ( walking ? hit.distance * flat : hit.distance ) : Infinity;
-		// flying speed grows with height (see fly), so the most is a few seconds of it, not a distance
-		const most = walking ? GLIDE_MOST : GLIDE_SECONDS * MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
+		// the most grows with height in the air, as flying speed does: low it is fine steps, high it is whole streets
+		const most = walking ? GLIDE_MOST : Math.max( GLIDE_MOST, GLIDE_HEIGHTS * this.heightAboveGround );
 		const left = hit ? MathUtils.clamp( away * GLIDE_SHARE, GLIDE_LEAST, most ) : Math.min( walking ? GLIDE_BLIND : GLIDE_BLIND_FLYING, most );
 		this.glide = { dir, left, age: 0, stuck: 0, mode: this.mode };
 
@@ -581,16 +594,15 @@ export class Player {
 
 		const { world, position, velocity } = this;
 		const a = this.axes();
-		// you go where you look (one-thumb steering cannot look up or down, so it flies level)
-		const pitch = this.oneThumb ? 0 : this.pitch;
-		const cp = Math.cos( pitch );
-		this.forward.set( - Math.sin( this.yaw ) * cp, Math.sin( pitch ), - Math.cos( this.yaw ) * cp );
+		// forward and back keep your height however you look: the view only aims the camera, and
+		// height changes only with the up and down controls
+		this.forward.set( - Math.sin( this.yaw ), 0, - Math.cos( this.yaw ) );
 		this.right.set( Math.cos( this.yaw ), 0, - Math.sin( this.yaw ) );
 
 		// faster the higher you are, so streets and whole cities both feel right
 		// (the height is smoothed, so passing over a rooftop or a cliff edge does not jolt your speed)
 		this.speedHeight += ( this.heightAboveGround - this.speedHeight ) * ( 1 - Math.exp( - dt * 1.5 ) );
-		const base = MathUtils.clamp( this.speedHeight * 0.5, 15, 1500 );
+		const base = MathUtils.clamp( this.speedHeight, FLY_SPEED_LEAST, FLY_SPEED_MOST ); // a height a second
 		const top = base * ( a.fast ? 3 : 1 );
 
 		// Straight up or down starts gently, for small adjustments, and builds to full flying
@@ -598,13 +610,14 @@ export class Player {
 		const sign = Math.sign( a.y );
 		this.liftTime = sign !== 0 && sign === this.liftSign ? this.liftTime + dt : 0;
 		this.liftSign = sign;
-		const lift = LIFT_START + ( 1 - LIFT_START ) * Math.min( 1, this.liftTime / LIFT_RAMP );
+		// (a double click's glide goes up or down at the pace it goes forward, so it keeps the line clicked)
+		const lift = this.glide ? 1 : LIFT_START + ( 1 - LIFT_START ) * Math.min( 1, this.liftTime / LIFT_RAMP );
 
-		// You only move while a key is held: forward or (more slowly) backward along the view,
+		// You only move while a key is held: forward or (more slowly) backward level,
 		// sideways, and straight up or down. Let go and you come to a stop.
 		const target = this.move.set( 0, 0, 0 )
 			.addScaledVector( this.forward, a.z > 0 ? a.z * top : a.z * top * 0.5 )
-			.addScaledVector( this.right, a.x * top * 0.5 )
+			.addScaledVector( this.right, a.x * top * FLY_SIDE )
 			.addScaledVector( UP, a.y * top * lift );
 
 		// ease in and out quickly, so starts and stops are smooth but there is no gliding on
@@ -629,7 +642,9 @@ export class Player {
 		}
 
 		position.addScaledVector( velocity, dt );
-		this.keepClear();
+		// five rays, which are costly beside buildings on a phone: hovering, ten times a second is enough
+		this.stillFor = velocity.lengthSq() > 1e-4 ? 1 : this.stillFor + dt;
+		if ( this.stillFor >= 0.1 ) { this.keepClear(); this.stillFor = 0; }
 
 		// keep above the surface
 		const ground = this.trusted( world.groundBelow( position ) );
@@ -822,14 +837,47 @@ export class Player {
 		const releaseMove = () => {
 
 			this.movePointer = null;
+			this.sidePointer = null;
 			this.stick.x = this.stick.z = this.stick.turn = 0;
 			this.stick.fast = false;
+
+		};
+		// the thumb stick, from where the moving finger is now against where it landed
+		const steer = () => {
+
+			const dx = this.moveNowX - this.moveX, dy = this.moveNowY - this.moveY;
+			const length = Math.hypot( dx, dy );
+			const live = length > STICK_DEAD;
+			this.stick.z = live ? MathUtils.clamp( - dy / STICK_FULL, - 1, 1 ) : 0;
+			if ( this.oneThumb && this.sidePointer === null ) {
+
+				// sideways drag turns instead of sidestepping
+				const side = Math.max( 0, Math.abs( dx ) - TURN_DEAD ) * Math.sign( dx );
+				this.stick.turn = MathUtils.clamp( side / STICK_FULL, - 1, 1 );
+				this.stick.x = 0;
+
+			} else {
+
+				// two thumbs, or two fingers on a phone held upright: sideways steps aside
+				this.stick.x = live ? MathUtils.clamp( dx / STICK_FULL, - 1, 1 ) : 0;
+				this.stick.turn = 0;
+
+			}
+
+			// one thumb: only the forward or backward part counts, so a wide turn is not a boost
+			this.stick.fast = ( this.oneThumb ? Math.abs( dy ) : length ) > STICK_FAST;
 
 		};
 		const release = ( e: PointerEvent ) => {
 
 			if ( e.pointerId === this.lookPointer ) releaseLook();
 			if ( e.pointerId === this.movePointer ) releaseMove();
+			if ( e.pointerId === this.sidePointer ) {
+
+				this.sidePointer = null;
+				steer();
+
+			}
 
 		};
 		const letGo = () => {
@@ -851,10 +899,17 @@ export class Player {
 			// upright: any finger moves and turns. Sideways: the left half moves, the right half looks.
 			if ( e.pointerType === 'touch' && ( this.oneThumb || e.clientX < window.innerWidth / 2 ) ) {
 
-				if ( this.movePointer !== null ) return;
+				if ( this.movePointer !== null ) {
+
+					// upright, a second finger: the drag now steps aside (it is only counted, so no capture)
+					if ( this.oneThumb && this.sidePointer === null ) { this.sidePointer = e.pointerId; steer(); }
+					return;
+
+				}
+
 				this.movePointer = e.pointerId;
-				this.moveX = e.clientX;
-				this.moveY = e.clientY;
+				this.moveX = this.moveNowX = e.clientX;
+				this.moveY = this.moveNowY = e.clientY;
 
 			} else {
 
@@ -884,31 +939,45 @@ export class Player {
 
 			} else if ( e.pointerId === this.movePointer ) {
 
-				const dx = e.clientX - this.moveX, dy = e.clientY - this.moveY;
-				const length = Math.hypot( dx, dy );
-				const live = length > STICK_DEAD;
-				this.stick.z = live ? MathUtils.clamp( - dy / STICK_FULL, - 1, 1 ) : 0;
-				if ( this.oneThumb ) {
-
-					// sideways drag turns instead of sidestepping
-					const side = Math.max( 0, Math.abs( dx ) - TURN_DEAD ) * Math.sign( dx );
-					this.stick.turn = MathUtils.clamp( side / STICK_FULL, - 1, 1 );
-					this.stick.x = 0;
-
-				} else {
-
-					this.stick.x = live ? MathUtils.clamp( dx / STICK_FULL, - 1, 1 ) : 0;
-					this.stick.turn = 0;
-
-				}
-
-				// one thumb: only the forward or backward part counts, so a wide turn is not a boost
-				this.stick.fast = ( this.oneThumb ? Math.abs( dy ) : length ) > STICK_FAST;
+				this.moveNowX = e.clientX;
+				this.moveNowY = e.clientY;
+				steer();
 
 			}
 
 		} );
 		dom.addEventListener( 'pointerup', release );
+		// A double tap goes part of the way toward what was tapped, as a double click does with a mouse
+		// (the browser sends no double click for a touch we have claimed). A tap is a touch that stays put
+		// and is short, with no other finger down.
+		const fingers = new Set<number>();
+		let tap: { id: number, x: number, y: number, at: number } | null = null;
+		let lastTap = { x: 0, y: 0, at: - Infinity };
+		dom.addEventListener( 'pointerdown', e => {
+
+			if ( e.pointerType !== 'touch' ) return;
+			fingers.add( e.pointerId );
+			tap = fingers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() / 1000 } : null;
+
+		} );
+		dom.addEventListener( 'pointermove', e => {
+
+			if ( tap && e.pointerId === tap.id && Math.hypot( e.clientX - tap.x, e.clientY - tap.y ) > TAP_SLOP ) tap = null;
+
+		} );
+		dom.addEventListener( 'pointercancel', e => { fingers.delete( e.pointerId ); tap = null; } );
+		dom.addEventListener( 'pointerup', e => {
+
+			fingers.delete( e.pointerId );
+			if ( ! tap || e.pointerId !== tap.id ) return;
+			const now = performance.now() / 1000;
+			const short = now - tap.at < TAP_TIME;
+			const second = now - lastTap.at < DOUBLE_TAP_GAP && Math.hypot( tap.x - lastTap.x, tap.y - lastTap.y ) < DOUBLE_TAP_APART;
+			if ( short && second ) { lastTap.at = - Infinity; this.goToward( tap.x, tap.y ); }
+			else lastTap = short ? { x: tap.x, y: tap.y, at: now } : { ...lastTap, at: - Infinity };
+			tap = null;
+
+		} );
 		dom.addEventListener( 'pointercancel', release );
 		dom.addEventListener( 'lostpointercapture', release );
 		// no context menu over the scene: it would swallow the button release and leave the view steering

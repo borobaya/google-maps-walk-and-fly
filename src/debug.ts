@@ -89,14 +89,14 @@ export class Debug {
 
 		const player = this.player;
 		const hit = this.world.ground( player.position );
-		const from = { below: 'measured below you', top: 'highest surface here', held: 'last known: nothing loaded below', arrival: 'set on arriving' }[ player.groundFrom ];
+		const from = { below: '', top: 'highest surface here', held: 'last known: nothing loaded below', arrival: 'set on arriving' }[ player.groundFrom ];
 		const detail = hit?.detail === undefined ? '' : ` · tile detail ${ hit.detail < 10 ? hit.detail.toFixed( 1 ) : n( hit.detail ) } m`;
 
 		const lines = [
 			`${ fps ? n( fps ) : '–' } fps · slowest ${ n( worst ) } ms · ${ n( this.draws ) } draws · ${ triangles } triangles`,
 			`3D tiles: ${ n( stats.visible ) } drawn · ${ n( cache.itemSet.size ) } kept (${ n( cache.cachedBytes / 1048576 ) } MB) · ${ loading ? `${ n( loading ) } loading` : 'all loaded' }`,
 			player.settling ? 'Ground: arriving'
-				: `${ player.mode === 'walk' && player.heightAboveGround < 0.1 ? 'Ground underfoot' : `Ground ${ player.heightAboveGround.toFixed( 1 ) } m below` } · ${ from }${ detail }`,
+				: `${ player.mode === 'walk' && player.heightAboveGround < 0.1 ? 'Ground underfoot' : `Ground ${ player.heightAboveGround.toFixed( 1 ) } m below` }${ from ? ` · ${ from }` : '' }${ detail }`,
 		];
 		const sv = this.streetview()?.status;
 		if ( sv && sv.what !== 'off' ) {

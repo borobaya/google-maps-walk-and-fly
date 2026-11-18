@@ -80,22 +80,22 @@ The right hand rests on the arrow keys, the left on W A S D, Space and C. The mo
 
 | Key | Walking | Flying |
 | --- | --- | --- |
-| ↑ ↓ | forward / back | fly forward / back along where you look; let go to stop |
+| ↑ ↓ | forward / back | fly forward / back, level however you look; let go to stop |
 | ← → | turn | turn |
 | A D | sidestep | sidestep |
 | W S | look up / down | pitch up / down |
 | Mouse, button held | drag to look around | drag to look around |
-| Scrolling: a two-finger swipe, or the wheel | scroll down goes forward, up goes back; a swipe right or left steps aside | the same, along where you look |
-| Double click | go part of the way toward what you clicked | the same, in 3D |
+| Scrolling: a two-finger swipe, or the wheel | scroll down goes forward, up goes back; a swipe right or left steps aside | the same, level |
+| Double click | go part of the way toward what you clicked | the same, in 3D (it can change your height) |
 | Space | jump | climb; faster the longer you hold |
 | C | – | descend, faster the longer you hold; touching the ground lands you |
 | Space twice, or F | take off | drop to the ground |
 
 The Clouds button in the box at the top right switches the clouds on and off; in a narrow window that box is folded behind the Go to… button. Phones and tablets have no clouds.
 
-A gentle swipe goes at the usual pace and a hard one runs (or boosts, flying). It is scrolling that moves you: scrolling down goes forward. With the computer's usual "natural" scrolling a trackpad scrolls down when you swipe up, so swiping up moves you forward and swiping right steps you to the right; a mouse wheel goes forward when rolled towards you. If you have switched natural scrolling off, a swipe is the other way round. A double click takes you about halfway to what was under the pointer (the most is 15 m on foot, and about three seconds' flying in the air), and any key or swipe cancels it. Phones have their thumb stick instead.
+A gentle swipe goes at the usual pace and a hard one runs (or boosts, flying). It is scrolling that moves you: scrolling down goes forward. With the computer's usual "natural" scrolling a trackpad scrolls down when you swipe up, so swiping up moves you forward and swiping right steps you to the right; a mouse wheel goes forward when rolled towards you. If you have switched natural scrolling off, a swipe is the other way round. A double click takes you about halfway to what was under the pointer (the most is 60 m on foot, and three times your height in the air, at least 60 m), and any key or swipe cancels it. On a phone the same is a double tap.
 
-Flying speed grows with height, so you can thread streets down low and cross a city up high.
+Looking up or down never changes your height when flying: only Space and C (or the up and down buttons) do. Flying speed is your height above the ground every second (at least 15 m/s), so you can thread streets down low and cross a city up high.
 
 ### On a phone or tablet
 
@@ -105,13 +105,16 @@ Held sideways (landscape), it is a two-thumb game, laid out like most mobile gam
 | --- | --- | --- |
 | Drag on the left half | move; a long drag runs | fly; a long drag boosts |
 | Drag on the right half | look around | look around |
+| Double tap | go part of the way toward what you tapped | the same, in 3D |
 
 Held upright (portrait), one thumb does it all:
 
 | Touch | Walking | Flying |
 | --- | --- | --- |
-| Drag up or down, anywhere | forward / back; a long drag runs | fly forward / back; a long drag boosts |
+| Drag up or down, anywhere | forward / back; a long drag runs | fly forward / back, level; a long drag boosts |
 | Drag left or right | turn | turn |
+| Two fingers, drag left or right | step aside | step aside |
+| Double tap | go part of the way toward what you tapped | the same, in 3D |
 
 Upright there is no looking up or down: the view stays level on foot and tilted slightly down in the air, and flying forward keeps your height.
 

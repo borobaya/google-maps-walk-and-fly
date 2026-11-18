@@ -97,9 +97,61 @@ await move( 1, 254, 480 ); // 120px forward
 await sleep( 300 );
 check( 'portrait: a long forward drag boosts', ( await state() ).stick.fast );
 await up( 1 );
-await sleep( 1500 );
+await sleep( 2500 ); // flying is faster the higher you are, so it takes a moment longer to stop
 const d = await state();
 check( 'letting go stops you', d.stick.z === 0 && d.stick.turn === 0 && ! d.stick.fast && d.speed < 1, d );
+
+// --- portrait: two fingers step aside, a double tap goes toward what was tapped ---
+{
+
+	const where = () => page.evaluate( () => ( { x: player.position.x, y: player.position.y, z: player.position.z, yaw: player.yaw, mode: player.mode } ) );
+	const rel = ( a, b ) => ( {
+		ahead: ( b.x - a.x ) * - Math.sin( a.yaw ) + ( b.z - a.z ) * - Math.cos( a.yaw ),
+		right: ( b.x - a.x ) * Math.cos( a.yaw ) + ( b.z - a.z ) * - Math.sin( a.yaw ),
+		turned: b.yaw - a.yaw,
+	} );
+	const p0 = await where();
+	await down( 1, 160, 600 );
+	await down( 2, 230, 600 );
+	await move( 1, 220, 600 );
+	await move( 2, 290, 600 );
+	await sleep( 1200 );
+	const two = await state();
+	const sideways = rel( p0, await where() );
+	check( 'portrait: two fingers dragged sideways step aside, and do not turn', two.one && two.stick.x === 1 && two.stick.turn === 0 && sideways.right > 3 && Math.abs( sideways.turned ) < 0.02, { stick: two.stick, sideways } );
+	await up( 2 );
+	await sleep( 300 );
+	const one = await state();
+	check( '…and with one finger left, the same drag turns again', one.stick.x === 0 && one.stick.turn > 0, one.stick );
+	await up( 1 );
+	await sleep( 1500 );
+
+	// a single tap moves nothing; two quick taps go part of the way toward the spot tapped
+	const t0 = await where();
+	await tap( 195, 700 );
+	await sleep( 1000 );
+	const single = rel( t0, await where() );
+	check( 'portrait: a single tap moves nothing', Math.hypot( single.ahead, single.right ) < 0.5, single );
+	await tap( 195, 700 );
+	await sleep( 120 );
+	await tap( 195, 700 );
+	const gliding = await page.evaluate( () => !! player.glide );
+	await sleep( 5000 );
+	const t1 = await where();
+	const gone = rel( t0, t1 );
+	check( 'portrait: a double tap goes part of the way toward the spot tapped', gliding && gone.ahead > 3 && t1.y < t0.y - 2, { gliding, gone, fell: + ( t0.y - t1.y ).toFixed( 1 ) } );
+	check( '…and then stops', ( await state() ).speed < 1 && await page.evaluate( () => ! player.glide ) );
+	// two taps far apart are not a double tap
+	await sleep( 1000 );
+	const f0 = await where();
+	await tap( 100, 700 );
+	await sleep( 120 );
+	await tap( 300, 700 );
+	await sleep( 1000 );
+	const far = rel( f0, await where() );
+	check( 'portrait: two taps far apart are not a double tap', Math.hypot( far.ahead, far.right ) < 0.5, far );
+
+}
 
 // the status panel steps aside while you steer, and comes back after ten quiet seconds
 const quiet = () => page.evaluate( () => ( { quiet: document.querySelector( '.status' ).classList.contains( 'quiet' ), opacity: + getComputedStyle( document.querySelector( '.status' ) ).opacity } ) );
@@ -215,7 +267,7 @@ const y1 = ( await state() ).y;
 check( 'Fly takes off and ▲ climbs', y1 - y0 > 3, y1 - y0 );
 // metres per second early in the hold, and once it has been held a while
 const gentle = ( early.y - y0 ) / 0.5, full = ( later.y - late.y ) / ( ( laterAt - lateAt ) / 1000 );
-check( '▲ starts gently and speeds up the longer it is held', gentle < 8 && full > 10, { gentle, full, held: ( lateAt - earlyAt ) / 1000 } );
+check( '▲ starts gently and speeds up the longer it is held', gentle < full * 0.6 && full > 10, { gentle, full, held: ( lateAt - earlyAt ) / 1000 } );
 const downButton = await centre( '.pad .down' );
 await down( 3, downButton.x, downButton.y );
 await page.waitForFunction( () => player.mode === 'walk', { timeout: 20000 } ).catch( () => {} );
