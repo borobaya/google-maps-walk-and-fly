@@ -141,7 +141,9 @@ check( 'laptop: full quality with clouds, the help panel and no touch buttons', 
 	const single = across( before, await state(), before.yaw );
 	check( 'a single click moves nothing', single.total < 0.5, single );
 	await page.mouse.click( 1000, 360, { count: 2 } );
-	await sleep( 5000 );
+	// (half the way to a wall can be 30 m, which on foot takes a while)
+	await page.waitForFunction( () => ! player.glide, { timeout: 20000 } ).catch( () => {} );
+	await sleep( 1500 );
 	const after = await state();
 	const gone = across( before, after, before.yaw );
 	check( 'a double click goes part of the way toward the spot clicked: to the right of where you face', gone.right > 3 && gone.total > 3, gone );
@@ -500,6 +502,7 @@ await sleep( 300 );
 
 		}, height, pitch, at );
 		await page.waitForFunction( () => ! player.settling, { timeout: 90000 } );
+		await loaded( page ); // tiles still swapping in would move the walls it measures against
 		await sleep( 2500 );
 
 	};
@@ -557,7 +560,8 @@ await sleep( 300 );
 
 				player.yaw = a * Math.PI / 8;
 				const hit = world.cast( player.position, player.position.clone().set( - Math.sin( player.yaw ), 0, - Math.cos( player.yaw ) ), 120 );
-				if ( hit ) return { yaw: player.yaw, distance: hit.distance };
+				// a wall, not the slope of a roof or the ground: those are pushed off differently
+				if ( hit && Math.abs( hit.normal.y ) < 0.3 ) return { yaw: player.yaw, distance: hit.distance };
 
 			}
 			return null;
@@ -577,7 +581,7 @@ await sleep( 300 );
 
 				const ahead = player.position.clone().set( - Math.sin( found.yaw ), 0, - Math.cos( found.yaw ) );
 				const hit = world.cast( player.position, ahead, 150 );
-				if ( ! hit ) break;
+				if ( ! hit || Math.abs( hit.normal.y ) >= 0.3 ) break;
 				player.position.addScaledVector( ahead, hit.distance - 0.3 );
 				player.velocity.set( 0, 0, 0 );
 				const start = player.position.clone();
@@ -586,12 +590,24 @@ await sleep( 300 );
 				pushed = + ( - player.position.clone().sub( start ).dot( ahead ) ).toFixed( 2 );
 
 			}
-			return pushed;
+			return { pushed, mode: player.mode, settling: player.settling, agl: + player.heightAboveGround.toFixed( 1 ), clearance: + player.clearance.toFixed( 2 ), ahead: world.cast( player.position, player.position.clone().set( - Math.sin( found.yaw ), 0, - Math.cos( found.yaw ) ), 10 )?.distance ?? null };
 
 		}, found );
-		check( 'hovering 0.3 m from a wall is pushed back out to a metre', after > 0.5 && after < 1.5, { found, pushedBack: after } );
+		check( 'hovering 0.3 m from a wall is pushed back out to a metre', after.pushed > 0.5 && after.pushed < 1.5, { found, after } );
 
 	} else check( 'hovering 0.3 m from a wall is pushed back out to a metre', false, 'no wall found within 120 m at 20, 40 or 70 m up' );
+	// a cache full to the brim, with tiles still coming in, makes them coarser (and the way back is slow, so it is put back by hand)
+	await goUp( 60, - 0.3 );
+	await page.evaluate( () => { const c = world.tiles.lruCache; window.__cache = [ c.minBytesSize, c.maxBytesSize, world.tiles.parseQueue.maxJobs ]; c.maxBytesSize = c.cachedBytes; c.minBytesSize = c.cachedBytes * 0.97; world.tiles.parseQueue.maxJobs = 1; } ); // full to the brim, and slow decoding, as on a phone
+	// somewhere new, so that a crowd of tiles is on its way (not waited for: it is the point), on a processor eight times slower
+	const slow = await page.createCDPSession();
+	await slow.send( 'Emulation.setCPUThrottlingRate', { rate: 8 } );
+	await page.evaluate( () => { const here = world.toLatLng( player.position ); player.teleport( 51.51, - 0.1347, { height: here.height - player.heightAboveGround + 60, heading: 90, pitch: - 0.3, mode: 'fly' } ); } );
+	const coarser = await page.waitForFunction( () => world.extraError > 0, { timeout: 60000 } ).then( () => true, () => false );
+	await slow.send( 'Emulation.setCPUThrottlingRate', { rate: 1 } );
+	await slow.detach();
+	const extra = await page.evaluate( () => { const c = world.tiles.lruCache; [ c.minBytesSize, c.maxBytesSize, world.tiles.parseQueue.maxJobs ] = window.__cache; const e = world.extraError; world.extraError = 0; return e; } );
+	check( 'a tile cache too small for the view makes the tiles coarser', coarser && extra >= 2 && extra <= 10, { coarser, extra } );
 	// back up high and level, where the checks that follow found you before this one
 	await goUp( 300, 0 );
 

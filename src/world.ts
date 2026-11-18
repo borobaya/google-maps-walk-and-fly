@@ -33,6 +33,14 @@ const ENU_TO_SCENE = new Matrix4().set(
 	0, 0, 0, 1,
 );
 
+// the tile cache counts as strained when it is this full and more than this many tiles are still on their way
+const STRAIN_FULL = 0.95;
+const STRAIN_LOADING = 5;
+const STRAIN_AFTER = 3; // seconds of strain before the tiles are made coarser
+const CALM_AFTER = 45; // seconds of calm before they are made finer again
+const EXTRA_ERROR_STEP = 2; // pixels of screen-space error
+const EXTRA_ERROR_MOST = 10;
+
 /**
  * Google's photorealistic 3D tiles, placed so that a chosen point on Earth sits
  * at the scene origin with +Y up, +Z north and -X east.
@@ -44,6 +52,15 @@ export class World {
 	onError: ( ( message: string, fatal: boolean ) => void ) | null = null;
 	private failures: number[] = [];
 	private lastWarned = - Infinity;
+
+	/**
+	 * Pixels of screen-space error added to the tiles' targets while the tile cache is too small for
+	 * what is in view: coarser tiles, a step at a time, until the view fits (see `watchCache`).
+	 */
+	extraError = 0;
+	private strained = 0;
+	private calm = 0;
+	private checkedAt = 0;
 
 	private raycaster = new Raycaster();
 	private frame = new Matrix4();
@@ -196,6 +213,52 @@ export class World {
 	update() {
 
 		this.tiles.update();
+		this.watchCache();
+
+	}
+
+	/**
+	 * A view that needs more tiles than the cache holds evicts what the next frame needs again, so
+	 * tiles are fetched and decoded endlessly (a phone in a dense street: a thousand a minute, and a
+	 * frame every quarter of a second). Once the cache has been full while tiles keep loading for a
+	 * few seconds, coarser ones are asked for, two pixels of error at a time, until the view fits;
+	 * after a long calm one step of detail comes back, and goes again if the strain does.
+	 */
+	private watchCache() {
+
+		const now = performance.now();
+		if ( now - this.checkedAt < 1000 ) return;
+		const seconds = Math.min( ( now - this.checkedAt ) / 1000, 2 );
+		this.checkedAt = now;
+
+		// not in the library's type definitions, though public
+		const cache = this.tiles.lruCache as unknown as { cachedBytes: number, maxBytesSize: number };
+		const stats = ( this.tiles as unknown as { stats: Record<'queued' | 'downloading' | 'parsing', number> } ).stats;
+		const loading = stats.queued + stats.downloading + stats.parsing;
+
+		if ( cache.cachedBytes > STRAIN_FULL * cache.maxBytesSize && loading > STRAIN_LOADING ) {
+
+			this.calm = 0;
+			this.strained += seconds;
+			if ( this.strained >= STRAIN_AFTER && this.extraError < EXTRA_ERROR_MOST ) {
+
+				this.extraError += EXTRA_ERROR_STEP;
+				this.strained = 0;
+
+			}
+
+		} else {
+
+			this.strained = 0;
+			this.calm = loading <= 2 ? this.calm + seconds : 0;
+			if ( this.calm >= CALM_AFTER && this.extraError > 0 ) {
+
+				this.extraError = Math.max( 0, this.extraError - EXTRA_ERROR_STEP );
+				this.calm = 0;
+
+			}
+
+		}
 
 	}
 

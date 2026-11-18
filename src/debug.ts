@@ -94,7 +94,7 @@ export class Debug {
 
 		const lines = [
 			`${ fps ? n( fps ) : '–' } fps · slowest ${ n( worst ) } ms · ${ n( this.draws ) } draws · ${ triangles } triangles`,
-			`3D tiles: ${ n( stats.visible ) } drawn · ${ n( cache.itemSet.size ) } kept (${ n( cache.cachedBytes / 1048576 ) } MB) · ${ loading ? `${ n( loading ) } loading` : 'all loaded' }`,
+			`3D tiles: ${ n( stats.visible ) } drawn · ${ n( cache.itemSet.size ) } kept (${ n( cache.cachedBytes / 1048576 ) } MB) · ${ loading ? `${ n( loading ) } loading` : 'all loaded' }${ this.world.extraError ? ` · coarser by ${ this.world.extraError } px (cache full)` : '' }`,
 			player.settling ? 'Ground: arriving'
 				: `${ player.mode === 'walk' && player.heightAboveGround < 0.1 ? 'Ground underfoot' : `Ground ${ player.heightAboveGround.toFixed( 1 ) } m below` }${ from ? ` · ${ from }` : '' }${ detail }`,
 		];

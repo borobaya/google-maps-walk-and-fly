@@ -136,7 +136,8 @@ check( 'letting go stops you', d.stick.z === 0 && d.stick.turn === 0 && ! d.stic
 	await sleep( 120 );
 	await tap( 195, 700 );
 	const gliding = await page.evaluate( () => !! player.glide );
-	await sleep( 5000 );
+	await page.waitForFunction( () => ! player.glide, { timeout: 20000 } ).catch( () => {} );
+	await sleep( 1500 );
 	const t1 = await where();
 	const gone = rel( t0, t1 );
 	check( 'portrait: a double tap goes part of the way toward the spot tapped', gliding && gone.ahead > 3 && t1.y < t0.y - 2, { gliding, gone, fell: + ( t0.y - t1.y ).toFixed( 1 ) } );

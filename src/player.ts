@@ -549,14 +549,18 @@ export class Player {
 	private keepClear( body = BODY ) {
 
 		const { world, position } = this;
-		let nearest = FEELER;
+		// Only as far as the camera could use (see main.ts, which keeps its near plane within half of
+		// the clearance, and that within a twentieth of your height): a long ray looks through every
+		// tile along its way, which in a dense street is most of the cost of a frame on a phone.
+		const reach = Math.min( FEELER, Math.max( body * 2, this.heightAboveGround * 0.12 ) );
+		let nearest = reach;
 		const sin = Math.sin( this.yaw ), cos = Math.cos( this.yaw );
 		const dirs = [ [ - sin, 0, - cos ], [ sin, 0, cos ], [ cos, 0, - sin ], [ - cos, 0, sin ], [ 0, 1, 0 ] ];
 
 		for ( const [ x, y, z ] of dirs ) {
 
 			const dir = this.move.set( x, y, z );
-			const hit = world.cast( position, dir, FEELER );
+			const hit = world.cast( position, dir, reach );
 			if ( ! hit ) continue;
 
 			if ( hit.distance < body ) {

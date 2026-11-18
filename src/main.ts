@@ -4,7 +4,7 @@ import { Hud, PLACES, parseLatLng, showSetup, showUnsupported } from './hud';
 import { Player, type Resume } from './player';
 import type { Debug } from './debug';
 import type { StreetView } from './streetview';
-import { quality } from './quality';
+import { LOST_STORE, lostBefore, quality } from './quality';
 import './requests'; // counts requests to Google from the start, for the debug panel
 import { addTouchControls } from './touch';
 import { World } from './world';
@@ -101,8 +101,6 @@ function start( key: string, typed: boolean ) {
 
 	// The screen's full resolution. A phone that reset its graphics at it (memory ran low) starts
 	// the reload at 2x, for the rest of this visit.
-	const LOST_STORE = 'walk-and-fly-lost-graphics';
-	const lostBefore = ( () => { try { return sessionStorage.getItem( LOST_STORE ) !== null; } catch { return false; } } )();
 	let pixelRatio = Math.min( window.devicePixelRatio, quality.pixelRatio, quality.phone && lostBefore ? 2 : Infinity );
 	renderer.setPixelRatio( pixelRatio );
 
@@ -391,7 +389,7 @@ function start( key: string, typed: boolean ) {
 		atmosphere.update( world.tiles.group.matrixWorldInverse );
 
 		// more detail up close when on foot
-		world.tiles.errorTarget = player.mode === 'walk' ? quality.walkError : quality.flyError;
+		world.tiles.errorTarget = ( player.mode === 'walk' ? quality.walkError : quality.flyError ) + world.extraError;
 		world.update();
 
 		atmosphere.render( dt );

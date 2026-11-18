@@ -32,13 +32,21 @@ const phone = forced ? forced === 'phone' : matchMedia( '(pointer: coarse)' ).ma
 /** Chrome's rounded figure for the device's memory, in GB (at most 8); undefined elsewhere. */
 const lowMemory = ( ( navigator as Navigator & { deviceMemory?: number } ).deviceMemory ?? 8 ) < 8;
 
+/** Set (for this visit) when the device took the graphics away, which phones do when memory runs low. */
+export const LOST_STORE = 'walk-and-fly-lost-graphics';
+export const lostBefore: boolean = ( () => { try { return sessionStorage.getItem( LOST_STORE ) !== null; } catch { return false; } } )();
+
 export const quality: Quality = phone ? {
 	phone: true,
 	pixelRatio: Infinity,
 	minPixelRatio: 1,
 	clouds: false,
-	cacheMin: 150 * MB,
-	cacheMax: 220 * MB,
+	// Twice the earlier 150 / 220 MB: a dense street at walking detail (Piccadilly Circus) needed more than
+	// that, so tiles were fetched and decoded again as fast as they were dropped, at a few frames a second.
+	// A device that ran short of memory and took the graphics away starts the reload with the earlier size
+	// (and main.ts at a lower resolution), for the rest of the visit.
+	cacheMin: lostBefore ? 150 * MB : 300 * MB,
+	cacheMax: lostBefore ? 220 * MB : 450 * MB,
 	parseJobs: 4,
 	walkError: 6,
 	flyError: 16,
